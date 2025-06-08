@@ -98,7 +98,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void verifyEmail(VerifyEmailRequest request) {
+    public AuthResponse verifyEmail(VerifyEmailRequest request) {
         VerificationToken token = tokenRepository.findByEmailAndCodeAndType(
                         request.getEmail(),
                         request.getCode(),
@@ -107,10 +107,14 @@ public class AuthService {
                 .orElseThrow(() -> new AuthException("Invalid verification code"));
 
         if (token.isExpired()) {
+
+            tokenRepository.delete(token);
             throw new AuthException("Verification code has expired");
         }
 
         if (token.isUsed()) {
+
+            tokenRepository.delete(token);
             throw new AuthException("Verification code has already been used");
         }
 
@@ -120,10 +124,14 @@ public class AuthService {
         user.setIsVerified(true);
         userRepository.save(user);
 
-        token.markAsUsed();
-        tokenRepository.save(token);
+        tokenRepository.delete(token);
 
-        log.info("Email verified successfully for user: {}", user.getUsername());
+
+        String jwt = jwtService.generateToken(user);
+
+        log.info("Email verified successfully for user: {} - Token deleted", user.getUsername());
+
+        return new AuthResponse(jwt, mapToUserInfo(user));
     }
 
     @Transactional
@@ -134,6 +142,7 @@ public class AuthService {
         if (user.getIsVerified()) {
             throw new AuthException("Email is already verified");
         }
+
 
         tokenRepository.deleteByEmailAndType(request.getEmail(), TokenType.EMAIL_VERIFICATION);
 
@@ -150,6 +159,7 @@ public class AuthService {
         if (!user.getIsVerified()) {
             throw new AuthException("Email not verified");
         }
+
 
         tokenRepository.deleteByEmailAndType(request.getEmail(), TokenType.PASSWORD_RESET);
 
@@ -168,10 +178,14 @@ public class AuthService {
                 .orElseThrow(() -> new AuthException("Invalid reset code"));
 
         if (token.isExpired()) {
+
+            tokenRepository.delete(token);
             throw new AuthException("Reset code has expired");
         }
 
         if (token.isUsed()) {
+   
+            tokenRepository.delete(token);
             throw new AuthException("Reset code has already been used");
         }
 
@@ -181,10 +195,10 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        token.markAsUsed();
-        tokenRepository.save(token);
 
-        log.info("Password reset successfully for user: {}", user.getUsername());
+        tokenRepository.delete(token);
+
+        log.info("Password reset successfully for user: {} - Token deleted", user.getUsername());
     }
 
     private void sendVerificationCode(String email, String firstName, TokenType tokenType) {

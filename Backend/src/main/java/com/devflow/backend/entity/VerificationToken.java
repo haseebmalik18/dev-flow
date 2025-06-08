@@ -36,11 +36,16 @@ public class VerificationToken {
     @Column(nullable = false)
     private LocalDateTime expiresAt;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
     @Column
     private LocalDateTime usedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+    }
 
     public boolean isExpired() {
         return LocalDateTime.now().isAfter(expiresAt);

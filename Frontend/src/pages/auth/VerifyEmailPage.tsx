@@ -1,30 +1,23 @@
 import React, { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
 import { useLocation, useNavigate, Link } from "react-router-dom";
-import { Mail, RefreshCw, CheckCircle } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { AuthLayout } from "../../components/layout/AuthLayout";
-import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { authService } from "../../services/authService";
-import type { VerifyEmailRequest } from "../../types/auth";
+import { useAuthStore } from "../../hooks/useAuthStore";
+import { VerificationCodeInput } from "../../components/ui/VerificationCodeInput";
 
 export const VerifyEmailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [canResend, setCanResend] = useState(false);
   const [countdown, setCountdown] = useState(60);
+  const [codeError, setCodeError] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
   const email = location.state?.email || "";
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<VerifyEmailRequest>({
-    defaultValues: { email },
-  });
+  const setAuth = useAuthStore((state) => state.setAuth);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -35,16 +28,26 @@ export const VerifyEmailPage: React.FC = () => {
     }
   }, [countdown]);
 
-  const onSubmit = async (data: VerifyEmailRequest) => {
+  const handleCodeComplete = async (code: string) => {
+    if (code.length !== 6) return;
+
     setIsLoading(true);
+    setCodeError("");
+
     try {
-      const response = await authService.verifyEmail(data);
-      if (response.success) {
-        toast.success("Email verified successfully!");
-        navigate("/login");
+      const response = await authService.verifyEmail({ email, code });
+      if (response.success && response.data) {
+        setAuth(response.data.user, response.data.accessToken);
+        toast.success("Email verified successfully! Welcome to DevFlow!");
+
+        setTimeout(() => {
+          navigate("/dashboard");
+        }, 1500);
       }
     } catch (error: any) {
-      const message = error.response?.data?.message || "Verification failed";
+      const message =
+        error.response?.data?.message || "Invalid verification code";
+      setCodeError(message);
       toast.error(message);
     } finally {
       setIsLoading(false);
@@ -58,9 +61,10 @@ export const VerifyEmailPage: React.FC = () => {
     try {
       const response = await authService.resendVerification({ email });
       if (response.success) {
-        toast.success("Verification code sent!");
+        toast.success("New verification code sent!");
         setCanResend(false);
         setCountdown(60);
+        setCodeError("");
       }
     } catch (error: any) {
       const message = error.response?.data?.message || "Failed to resend code";
@@ -91,76 +95,71 @@ export const VerifyEmailPage: React.FC = () => {
   return (
     <AuthLayout
       title="Verify Your Email"
-      subtitle={`We've sent a 6-digit code to ${email}`}
+      subtitle="Check your inbox and enter the code below"
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full">
-            <Mail className="w-8 h-8 text-blue-600" />
+      <div className="space-y-8">
+        <div className="text-center space-y-6">
+          <div className="space-y-2">
+            <p className="text-gray-700 font-medium">
+              We've sent a verification code to
+            </p>
+            <p className="text-blue-600 font-semibold bg-blue-50 px-4 py-2 rounded-lg inline-block">
+              {email}
+            </p>
+            <p className="text-sm text-gray-500">
+              Enter the 6-digit code to verify your account
+            </p>
           </div>
-
-          <p className="text-gray-600 text-sm">
-            Enter the 6-digit verification code sent to your email
-          </p>
         </div>
 
-        <Input
-          {...register("email")}
-          type="email"
-          value={email}
-          disabled
-          className="bg-gray-50"
-        />
+        <div className="space-y-6">
+          <VerificationCodeInput
+            onComplete={handleCodeComplete}
+            error={codeError}
+            disabled={isLoading}
+          />
 
-        <Input
-          {...register("code", {
-            required: "Verification code is required",
-            pattern: {
-              value: /^\d{6}$/,
-              message: "Code must be 6 digits",
-            },
-          })}
-          type="text"
-          placeholder="000000"
-          maxLength={6}
-          className="text-center text-2xl tracking-widest font-mono"
-          error={errors.code?.message}
-        />
+          {isLoading && (
+            <div className="text-center">
+              <div className="inline-flex items-center gap-2 text-blue-600">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm font-medium">Verifying code...</span>
+              </div>
+            </div>
+          )}
+        </div>
 
-        <Button
-          type="submit"
-          className="w-full"
-          loading={isLoading}
-          size="lg"
-          icon={<CheckCircle className="w-5 h-5" />}
-        >
-          Verify Email
-        </Button>
-
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-4 pt-4 border-t border-gray-100">
           <p className="text-gray-600 text-sm">Didn't receive the code?</p>
 
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleResend}
-            disabled={!canResend}
-            loading={isResending}
-            icon={<RefreshCw className="w-4 h-4" />}
-          >
-            {canResend ? "Resend Code" : `Resend in ${countdown}s`}
-          </Button>
+          {canResend ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResend}
+              loading={isResending}
+              icon={<RefreshCw className="w-4 h-4" />}
+              className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white font-medium"
+            >
+              Resend Code
+            </Button>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-500 rounded-md text-sm">
+              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+              <span>Resend in {countdown}s</span>
+            </div>
+          )}
         </div>
 
-        <div className="text-center text-sm text-gray-600">
+        <div className="text-center pt-4">
           <Link
             to="/login"
-            className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
+            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
           >
             Back to Sign In
           </Link>
         </div>
-      </form>
+      </div>
     </AuthLayout>
   );
 };

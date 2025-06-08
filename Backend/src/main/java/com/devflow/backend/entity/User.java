@@ -57,20 +57,30 @@ public class User implements UserDetails {
     private String avatar;
 
     @Enumerated(EnumType.STRING)
+    @Builder.Default
     @Column(nullable = false)
     private Role role = Role.MEMBER;
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean isVerified = false;
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean isActive = true;
 
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
 
     @Column(nullable = false)
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+    }
 
     @PreUpdate
     protected void onUpdate() {

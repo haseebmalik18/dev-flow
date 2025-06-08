@@ -22,7 +22,9 @@ export const authService = {
     return response.data;
   },
 
-  verifyEmail: async (data: VerifyEmailRequest): Promise<ApiResponse<void>> => {
+  verifyEmail: async (
+    data: VerifyEmailRequest
+  ): Promise<ApiResponse<AuthResponse>> => {
     const response = await api.post("/auth/verify-email", data);
     return response.data;
   },
