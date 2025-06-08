@@ -15,9 +15,10 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "activities")
-@Index(name = "idx_activity_project_created", columnList = "project_id, created_at DESC")
-@Index(name = "idx_activity_user_created", columnList = "user_id, created_at DESC")
+@Table(name = "activities", indexes = {
+        @Index(name = "idx_activity_project_created", columnList = "project_id, created_at"),
+        @Index(name = "idx_activity_user_created", columnList = "user_id, created_at")
+})
 public class Activity {
 
     @Id
@@ -32,26 +33,21 @@ public class Activity {
     @Column(nullable = false)
     private String description;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_id")
     private Project project;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "task_id")
     private Task task;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "target_user_id")
     private User targetUser;
-
 
     @Column(columnDefinition = "TEXT")
     private String metadata;
@@ -64,7 +60,7 @@ public class Activity {
         return Activity.builder()
                 .type(ActivityType.PROJECT_CREATED)
                 .description(String.format("%s created project \"%s\"",
-                        user.getFirstName() + " " + user.getLastName(), project.getName()))
+                        user.getFullName(), project.getName()))
                 .user(user)
                 .project(project)
                 .build();
@@ -74,7 +70,7 @@ public class Activity {
         return Activity.builder()
                 .type(ActivityType.TASK_CREATED)
                 .description(String.format("%s created task \"%s\"",
-                        user.getFirstName() + " " + user.getLastName(), task.getTitle()))
+                        user.getFullName(), task.getTitle()))
                 .user(user)
                 .project(task.getProject())
                 .task(task)
@@ -85,7 +81,7 @@ public class Activity {
         return Activity.builder()
                 .type(ActivityType.TASK_COMPLETED)
                 .description(String.format("%s completed task \"%s\"",
-                        user.getFirstName() + " " + user.getLastName(), task.getTitle()))
+                        user.getFullName(), task.getTitle()))
                 .user(user)
                 .project(task.getProject())
                 .task(task)
@@ -96,8 +92,7 @@ public class Activity {
         return Activity.builder()
                 .type(ActivityType.MEMBER_ADDED)
                 .description(String.format("%s added %s to the project",
-                        inviter.getFirstName() + " " + inviter.getLastName(),
-                        newMember.getFirstName() + " " + newMember.getLastName()))
+                        inviter.getFullName(), newMember.getFullName()))
                 .user(inviter)
                 .project(project)
                 .targetUser(newMember)
@@ -108,9 +103,9 @@ public class Activity {
         return Activity.builder()
                 .type(ActivityType.TASK_ASSIGNED)
                 .description(String.format("%s assigned task \"%s\" to %s",
-                        assigner.getFirstName() + " " + assigner.getLastName(),
+                        assigner.getFullName(),
                         task.getTitle(),
-                        assignee.getFirstName() + " " + assignee.getLastName()))
+                        assignee.getFullName()))
                 .user(assigner)
                 .project(task.getProject())
                 .task(task)
@@ -122,7 +117,7 @@ public class Activity {
         return Activity.builder()
                 .type(ActivityType.TASK_COMMENTED)
                 .description(String.format("%s commented on task \"%s\"",
-                        user.getFirstName() + " " + user.getLastName(), task.getTitle()))
+                        user.getFullName(), task.getTitle()))
                 .user(user)
                 .project(task.getProject())
                 .task(task)

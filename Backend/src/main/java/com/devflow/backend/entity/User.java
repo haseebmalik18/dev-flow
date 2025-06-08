@@ -56,6 +56,12 @@ public class User implements UserDetails {
     @Column
     private String avatar;
 
+    @Column
+    private String jobTitle;
+
+    @Column(columnDefinition = "TEXT")
+    private String bio;
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     @Column(nullable = false)
@@ -68,6 +74,9 @@ public class User implements UserDetails {
     @Builder.Default
     @Column(nullable = false)
     private Boolean isActive = true;
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -87,6 +96,25 @@ public class User implements UserDetails {
         updatedAt = LocalDateTime.now();
     }
 
+    // Helper methods for full name and initials
+    public String getFullName() {
+        return firstName + " " + lastName;
+    }
+
+    public String getInitials() {
+        return (firstName.substring(0, 1) + lastName.substring(0, 1)).toUpperCase();
+    }
+
+    // Methods that can be used to check user permissions in projects
+    public boolean canUserManageProject() {
+        return this.role == Role.ADMIN || this.role == Role.MANAGER;
+    }
+
+    public boolean canUserManageMembers() {
+        return this.role == Role.ADMIN || this.role == Role.MANAGER;
+    }
+
+    // UserDetails implementation
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

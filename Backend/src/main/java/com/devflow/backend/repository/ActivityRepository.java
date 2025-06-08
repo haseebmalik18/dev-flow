@@ -1,7 +1,6 @@
 package com.devflow.backend.repository;
 
 import com.devflow.backend.entity.Activity;
-
 import com.devflow.backend.entity.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,7 +13,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-
 @Repository
 public interface ActivityRepository extends JpaRepository<Activity, Long> {
 
@@ -23,7 +21,6 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
 
 
     Page<Activity> findByUserOrderByCreatedAtDesc(User user, Pageable pageable);
-
 
     List<Activity> findByTaskOrderByCreatedAtDesc(Task task);
 
@@ -36,11 +33,10 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
         AND a.createdAt >= :since
         ORDER BY a.createdAt DESC
     """)
-    List<Activity> findRecentActivitiesByUserProjects(@Param("user") User user, @Param("since") LocalDateTime since, Pageable pageable);
+    Page<Activity> findRecentActivitiesByUserProjects(@Param("user") User user, @Param("since") LocalDateTime since, Pageable pageable);
 
 
     List<Activity> findByTypeAndProjectOrderByCreatedAtDesc(ActivityType type, Project project);
-
 
     @Query("""
         SELECT a FROM Activity a 
@@ -62,7 +58,6 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
     """)
     List<Object[]> countActivitiesByTypeForProject(@Param("project") Project project, @Param("since") LocalDateTime since);
 
-
     @Query("""
         SELECT a FROM Activity a 
         WHERE (a.user = :user OR a.targetUser = :user)
@@ -70,7 +65,6 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
         ORDER BY a.createdAt DESC
     """)
     List<Activity> findActivitiesInvolvingUser(@Param("user") User user, @Param("project") Project project);
-
 
     @Query("DELETE FROM Activity a WHERE a.createdAt < :cutoff")
     void deleteOldActivities(@Param("cutoff") LocalDateTime cutoff);

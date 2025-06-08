@@ -5,6 +5,7 @@ import com.devflow.backend.dto.project.ProjectDTOs.*;
 import com.devflow.backend.entity.*;
 import com.devflow.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +26,6 @@ public class DashboardController {
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
     private final ActivityRepository activityRepository;
-    private final ProjectMemberRepository projectMemberRepository;
 
     @GetMapping("/stats")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardStats(
@@ -34,9 +34,9 @@ public class DashboardController {
         User user = (User) authentication.getPrincipal();
 
 
-        List<Project> userProjects = projectRepository
-                .findProjectsByUserMembership(user, Pageable.unpaged())
-                .getContent();
+        Page<Project> userProjectsPage = projectRepository
+                .findProjectsByUserMembership(user, Pageable.unpaged());
+        List<Project> userProjects = userProjectsPage.getContent();
 
 
         long activeProjects = userProjects.stream()
@@ -44,9 +44,9 @@ public class DashboardController {
                 .count();
 
 
-        List<Task> userTasks = taskRepository
-                .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged())
-                .getContent();
+        Page<Task> userTasksPage = taskRepository
+                .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
+        List<Task> userTasks = userTasksPage.getContent();
 
         long completedTasks = userTasks.stream()
                 .filter(t -> t.getStatus() == TaskStatus.DONE)
@@ -86,9 +86,9 @@ public class DashboardController {
         User user = (User) authentication.getPrincipal();
         LocalDateTime since = LocalDateTime.now().minusDays(7);
 
-        List<Activity> activities = activityRepository
-                .findRecentActivitiesByUserProjects(user, since, PageRequest.of(0, 20))
-                .getContent();
+        Page<Activity> activitiesPage = activityRepository
+                .findRecentActivitiesByUserProjects(user, since, PageRequest.of(0, 20));
+        List<Activity> activities = activitiesPage.getContent();
 
         List<Map<String, Object>> activityData = activities.stream()
                 .map(this::mapActivityToResponse)
@@ -103,9 +103,9 @@ public class DashboardController {
 
         User user = (User) authentication.getPrincipal();
 
-        List<Project> projects = projectRepository
-                .findProjectsByUserMembership(user, PageRequest.of(0, 6))
-                .getContent();
+        Page<Project> projectsPage = projectRepository
+                .findProjectsByUserMembership(user, PageRequest.of(0, 6));
+        List<Project> projects = projectsPage.getContent();
 
         List<ProjectSummary> projectSummaries = projects.stream()
                 .map(this::mapToProjectSummary)
@@ -120,9 +120,10 @@ public class DashboardController {
 
         User user = (User) authentication.getPrincipal();
 
-        List<Task> userTasks = taskRepository
-                .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, PageRequest.of(0, 10))
-                .getContent();
+
+        Page<Task> userTasksPage = taskRepository
+                .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, PageRequest.of(0, 10));
+        List<Task> userTasks = userTasksPage.getContent();
 
         Map<String, Object> taskOverview = new HashMap<>();
 
