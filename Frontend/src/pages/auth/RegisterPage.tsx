@@ -7,7 +7,7 @@ import { AuthLayout } from "../../components/layout/AuthLayout";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { authService } from "../../services/authService";
-import { RegisterRequest } from "../../types/auth";
+import type { RegisterRequest } from "../../types/auth";
 
 export const RegisterPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);

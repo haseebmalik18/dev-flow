@@ -7,7 +7,7 @@ import { AuthLayout } from "../../components/layout/AuthLayout";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { authService } from "../../services/authService";
-import { ResetPasswordRequest } from "../../types/auth";
+import type { ResetPasswordRequest } from "../../types/auth";
 
 export const ResetPasswordPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);

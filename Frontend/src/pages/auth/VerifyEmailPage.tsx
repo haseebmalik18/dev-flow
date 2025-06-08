@@ -7,7 +7,7 @@ import { AuthLayout } from "../../components/layout/AuthLayout";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { authService } from "../../services/authService";
-import { VerifyEmailRequest } from "../../types/auth";
+import type { VerifyEmailRequest } from "../../types/auth";
 
 export const VerifyEmailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
