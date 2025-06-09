@@ -12,6 +12,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,8 +31,8 @@ public class ProjectDTOs {
         private String description;
 
         private Priority priority;
-        private LocalDateTime startDate;
-        private LocalDateTime dueDate;
+        private LocalDate startDate;
+        private LocalDate dueDate;
         private String color;
         private BigDecimal budget;
     }
@@ -49,8 +50,8 @@ public class ProjectDTOs {
 
         private ProjectStatus status;
         private Priority priority;
-        private LocalDateTime startDate;
-        private LocalDateTime dueDate;
+        private LocalDate startDate;
+        private LocalDate dueDate;
         private String color;
         private BigDecimal budget;
         private BigDecimal spent;

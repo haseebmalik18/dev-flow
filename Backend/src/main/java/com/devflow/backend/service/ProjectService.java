@@ -33,8 +33,11 @@ public class ProjectService {
                 .name(request.getName())
                 .description(request.getDescription())
                 .priority(request.getPriority() != null ? request.getPriority() : Priority.MEDIUM)
-                .startDate(request.getStartDate())
-                .dueDate(request.getDueDate())
+
+                .startDate(request.getStartDate() != null ?
+                        request.getStartDate().atStartOfDay() : null)
+                .dueDate(request.getDueDate() != null ?
+                        request.getDueDate().atTime(23, 59, 59) : null)
                 .color(request.getColor() != null ? request.getColor() : "#3B82F6")
                 .budget(request.getBudget())
                 .owner(owner)
@@ -83,7 +86,6 @@ public class ProjectService {
     public ProjectResponse updateProject(Long projectId, UpdateProjectRequest request, User user) {
         Project project = findProjectWithAccess(projectId, user);
 
-
         if (!canUserManageProject(user, project)) {
             throw new AuthException("You don't have permission to update this project");
         }
@@ -99,7 +101,6 @@ public class ProjectService {
             ProjectStatus oldStatus = project.getStatus();
             project.setStatus(request.getStatus());
 
-
             if (request.getStatus() == ProjectStatus.COMPLETED && oldStatus != ProjectStatus.COMPLETED) {
                 project.setCompletedDate(LocalDateTime.now());
                 project.setProgress(100);
@@ -108,11 +109,12 @@ public class ProjectService {
         if (request.getPriority() != null) {
             project.setPriority(request.getPriority());
         }
+
         if (request.getStartDate() != null) {
-            project.setStartDate(request.getStartDate());
+            project.setStartDate(request.getStartDate().atStartOfDay());
         }
         if (request.getDueDate() != null) {
-            project.setDueDate(request.getDueDate());
+            project.setDueDate(request.getDueDate().atTime(23, 59, 59));
         }
         if (request.getColor() != null) {
             project.setColor(request.getColor());
@@ -175,7 +177,6 @@ public class ProjectService {
         User newMember = userRepository.findByUsernameOrEmail(request.getUsernameOrEmail(), request.getUsernameOrEmail())
                 .orElseThrow(() -> new AuthException("User not found"));
 
-
         if (projectMemberRepository.existsByProjectAndUser(project, newMember)) {
             throw new AuthException("User is already a member of this project");
         }
@@ -209,11 +210,9 @@ public class ProjectService {
             throw new AuthException("Member does not belong to this project");
         }
 
-
         if (member.getRole() == ProjectRole.OWNER) {
             throw new AuthException("Cannot remove project owner");
         }
-
 
         if (!canUserManageMembers(remover, project) && !member.getUser().equals(remover)) {
             throw new AuthException("You don't have permission to remove this member");
@@ -221,7 +220,6 @@ public class ProjectService {
 
         User removedUser = member.getUser();
         projectMemberRepository.delete(member);
-
 
         Activity activity = Activity.builder()
                 .type(ActivityType.MEMBER_REMOVED)
