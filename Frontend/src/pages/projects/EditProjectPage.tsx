@@ -10,59 +10,57 @@ import {
   Palette,
   AlertTriangle,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import { tempProjects } from "../../data/tempProjects";
-import toast from "react-hot-toast";
+import {
+  useProject,
+  useUpdateProject,
+  useArchiveProject,
+} from "../../hooks/useProjects";
+import type { UpdateProjectRequest } from "../../services/projectService";
 
-interface UpdateProjectFormData {
-  name: string;
-  description: string;
-  status: "planning" | "active" | "on_hold" | "completed" | "cancelled";
-  priority: "low" | "medium" | "high" | "critical";
-  startDate: string;
-  dueDate: string;
-  budget: number;
-  spent: number;
-  color: string;
+interface UpdateProjectFormData extends UpdateProjectRequest {
+  budget?: number;
+  spent?: number;
 }
 
 const statusOptions = [
-  { value: "planning", label: "Planning", color: "bg-gray-100 text-gray-800" },
-  { value: "active", label: "Active", color: "bg-green-100 text-green-800" },
+  { value: "PLANNING", label: "Planning", color: "bg-gray-100 text-gray-800" },
+  { value: "ACTIVE", label: "Active", color: "bg-green-100 text-green-800" },
   {
-    value: "on_hold",
+    value: "ON_HOLD",
     label: "On Hold",
     color: "bg-yellow-100 text-yellow-800",
   },
   {
-    value: "completed",
+    value: "COMPLETED",
     label: "Completed",
     color: "bg-blue-100 text-blue-800",
   },
-  { value: "cancelled", label: "Cancelled", color: "bg-red-100 text-red-800" },
+  { value: "CANCELLED", label: "Cancelled", color: "bg-red-100 text-red-800" },
 ];
 
 const priorityOptions = [
   {
-    value: "low",
+    value: "LOW",
     label: "Low Priority",
     color: "bg-green-100 text-green-800 border-green-200",
   },
   {
-    value: "medium",
+    value: "MEDIUM",
     label: "Medium Priority",
     color: "bg-yellow-100 text-yellow-800 border-yellow-200",
   },
   {
-    value: "high",
+    value: "HIGH",
     label: "High Priority",
     color: "bg-orange-100 text-orange-800 border-orange-200",
   },
   {
-    value: "critical",
+    value: "CRITICAL",
     label: "Critical Priority",
     color: "bg-red-100 text-red-800 border-red-200",
   },
@@ -85,57 +83,77 @@ export const EditProjectPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [selectedColor, setSelectedColor] = useState(colorOptions[0]);
-  const [isLoading, setIsLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const project = tempProjects.find((p) => p.id === id);
+  const {
+    data: project,
+    isLoading: isLoadingProject,
+    error: projectError,
+  } = useProject(id!);
+
+  const updateProjectMutation = useUpdateProject();
+  const archiveProjectMutation = useArchiveProject();
 
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isDirty },
-  } = useForm<UpdateProjectFormData>({
-    defaultValues: project
-      ? {
-          name: project.name,
-          description: project.description,
-          status: project.status as any,
-          priority: project.priority as any,
-          startDate: project.createdAt.split("T")[0],
-          dueDate: project.dueDate?.split("T")[0] || "",
-          budget: project.budget || 0,
-          spent: project.spent || 0,
-          color: project.color,
-        }
-      : undefined,
-  });
+  } = useForm<UpdateProjectFormData>();
 
   useEffect(() => {
     if (project) {
+      reset({
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        priority: project.priority,
+        startDate: project.startDate?.split("T")[0] || "",
+        dueDate: project.dueDate?.split("T")[0] || "",
+        budget: project.budget || 0,
+        spent: project.spent || 0,
+        color: project.color,
+      });
       setSelectedColor(project.color);
     }
-  }, [project]);
+  }, [project, reset]);
 
   const watchStartDate = watch("startDate");
   const watchPriority = watch("priority");
   const watchStatus = watch("status");
 
-  if (!project) {
+  if (isLoadingProject) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <DashboardHeader />
+        <main className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600">Loading project...</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (projectError || !project) {
     return (
       <div className="min-h-screen bg-gray-50">
         <DashboardHeader />
         <main className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
           <div className="text-center py-12">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
               Project not found
             </h2>
-            <Link
-              to="/projects"
-              className="text-blue-600 hover:text-blue-700 mt-4 inline-block"
-            >
-              Back to Projects
+            <p className="text-gray-600 mb-4">
+              The project you're trying to edit doesn't exist or you don't have
+              access to it.
+            </p>
+            <Link to="/projects">
+              <Button>Back to Projects</Button>
             </Link>
           </div>
         </main>
@@ -144,23 +162,24 @@ export const EditProjectPage: React.FC = () => {
   }
 
   const onSubmit = async (data: UpdateProjectFormData) => {
-    setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      const projectData = {
+      const updateData: UpdateProjectRequest = {
         ...data,
         color: selectedColor,
+        startDate: data.startDate || undefined,
+        dueDate: data.dueDate || undefined,
+        budget: data.budget || undefined,
+        spent: data.spent || undefined,
       };
 
-      console.log("Updating project:", projectData);
-      toast.success("Project updated successfully!");
+      await updateProjectMutation.mutateAsync({
+        id: project.id,
+        data: updateData,
+      });
+
       navigate(`/projects/${id}`);
     } catch (error) {
-      toast.error("Failed to update project");
-    } finally {
-      setIsLoading(false);
+      // Error is handled by the mutation hook
     }
   };
 
@@ -170,17 +189,11 @@ export const EditProjectPage: React.FC = () => {
   };
 
   const handleDeleteProject = async () => {
-    setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      toast.success("Project deleted successfully!");
+      await archiveProjectMutation.mutateAsync(project.id);
       navigate("/projects");
     } catch (error) {
-      toast.error("Failed to delete project");
-    } finally {
-      setIsLoading(false);
+      // Error is handled by the mutation hook
     }
   };
 
@@ -192,6 +205,11 @@ export const EditProjectPage: React.FC = () => {
   const getPriorityColor = (priority: string) => {
     const priorityOption = priorityOptions.find((p) => p.value === priority);
     return priorityOption?.color || "bg-gray-100 text-gray-800 border-gray-200";
+  };
+
+  const formatDateForInput = (dateString: string | null) => {
+    if (!dateString) return "";
+    return dateString.split("T")[0];
   };
 
   return (
@@ -282,7 +300,7 @@ export const EditProjectPage: React.FC = () => {
                     <div className="mt-2">
                       <span
                         className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-                          watchStatus
+                          watchStatus || "PLANNING"
                         )}`}
                       >
                         {
@@ -310,7 +328,7 @@ export const EditProjectPage: React.FC = () => {
                     <div className="mt-2">
                       <span
                         className={`inline-flex px-3 py-1 rounded-full text-sm font-medium border ${getPriorityColor(
-                          watchPriority
+                          watchPriority || "MEDIUM"
                         )}`}
                       >
                         {
@@ -355,6 +373,7 @@ export const EditProjectPage: React.FC = () => {
                 <Input
                   {...register("budget", {
                     min: { value: 0, message: "Budget must be positive" },
+                    valueAsNumber: true,
                   })}
                   type="number"
                   label="Total Budget"
@@ -366,6 +385,7 @@ export const EditProjectPage: React.FC = () => {
                 <Input
                   {...register("spent", {
                     min: { value: 0, message: "Spent amount must be positive" },
+                    valueAsNumber: true,
                   })}
                   type="number"
                   label="Amount Spent"
@@ -432,11 +452,13 @@ export const EditProjectPage: React.FC = () => {
                 </Link>
                 <Button
                   type="submit"
-                  loading={isLoading}
+                  loading={updateProjectMutation.isPending}
                   icon={<Save className="w-5 h-5" />}
                   className="bg-gradient-to-r from-blue-600 to-purple-600"
                 >
-                  {isLoading ? "Saving..." : "Save Changes"}
+                  {updateProjectMutation.isPending
+                    ? "Saving..."
+                    : "Save Changes"}
                 </Button>
               </div>
             </div>
@@ -475,10 +497,12 @@ export const EditProjectPage: React.FC = () => {
               </Button>
               <Button
                 onClick={handleDeleteProject}
-                loading={isLoading}
+                loading={archiveProjectMutation.isPending}
                 className="flex-1 bg-red-600 hover:bg-red-700"
               >
-                {isLoading ? "Deleting..." : "Delete Project"}
+                {archiveProjectMutation.isPending
+                  ? "Deleting..."
+                  : "Delete Project"}
               </Button>
             </div>
           </div>

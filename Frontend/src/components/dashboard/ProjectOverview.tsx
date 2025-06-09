@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import {
   MoreHorizontal,
   Users,
@@ -7,7 +8,6 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
-  Loader2,
   AlertTriangle,
 } from "lucide-react";
 import { useProjectsOverview } from "../../hooks/useDashboard";
@@ -205,9 +205,12 @@ export const ProjectOverview: React.FC = () => {
             Project Overview
           </h2>
         </div>
-        <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+        <Link
+          to="/projects"
+          className="text-sm text-blue-600 hover:text-blue-700 font-medium cursor-pointer transition-colors"
+        >
           View All
-        </button>
+        </Link>
       </div>
 
       {isLoading ? (

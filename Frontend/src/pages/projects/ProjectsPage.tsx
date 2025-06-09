@@ -1,31 +1,61 @@
 import React, { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
-import { Plus, FolderOpen } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, FolderOpen, AlertTriangle } from "lucide-react";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
-import { ProjectCard } from "../../components/projects/ProjectCard";
 import { ProjectFilters } from "../../components/projects/ProjectFilters";
+import { ProjectList } from "../../components/projects/ProjectList";
 import { Button } from "../../components/ui/Button";
-import { tempProjects } from "../../data/tempProjects";
-import toast from "react-hot-toast";
+import {
+  useProjects,
+  useProjectStats,
+  useArchiveProject,
+} from "../../hooks/useProjects";
 
 export const ProjectsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [sortBy, setSortBy] = useState("updated");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const {
+    data: projectsData,
+    isLoading: isLoadingProjects,
+    error: projectsError,
+  } = useProjects(currentPage, 12, searchTerm);
+
+  const { data: statsData, isLoading: isLoadingStats } = useProjectStats();
+
+  const archiveProjectMutation = useArchiveProject();
+
+  const transformedProjects = useMemo(() => {
+    if (!projectsData?.content) return [];
+
+    return projectsData.content.map((project) => ({
+      id: project.id.toString(),
+      name: project.name,
+      description: project.description,
+      progress: project.progress,
+      status: project.status.toLowerCase() as any,
+      priority: project.priority.toLowerCase() as any,
+      dueDate: project.dueDate,
+      teamSize: project.teamSize,
+      tasksCompleted: project.completedTasks,
+      totalTasks: project.totalTasks,
+      color: project.color,
+      healthStatus: project.healthStatus.toLowerCase().replace("_", "_") as any,
+      updatedAt: project.updatedAt,
+    }));
+  }, [projectsData]);
 
   const filteredProjects = useMemo(() => {
-    const filtered = tempProjects.filter((project) => {
-      const matchesSearch =
-        project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.description.toLowerCase().includes(searchTerm.toLowerCase());
-
+    let filtered = transformedProjects.filter((project) => {
       const matchesStatus = !statusFilter || project.status === statusFilter;
       const matchesPriority =
         !priorityFilter || project.priority === priorityFilter;
-
-      return matchesSearch && matchesStatus && matchesPriority;
+      return matchesStatus && matchesPriority;
     });
 
     filtered.sort((a, b) => {
@@ -34,7 +64,7 @@ export const ProjectsPage: React.FC = () => {
           return a.name.localeCompare(b.name);
         case "created":
           return (
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
           );
         case "dueDate":
           if (!a.dueDate && !b.dueDate) return 0;
@@ -52,16 +82,51 @@ export const ProjectsPage: React.FC = () => {
     });
 
     return filtered;
-  }, [searchTerm, statusFilter, priorityFilter, sortBy]);
+  }, [transformedProjects, statusFilter, priorityFilter, sortBy]);
 
-  const handleArchiveProject = (projectId: string) => {
-    toast.success("Project archived successfully");
-    //would use an API call to archive the project
+  const handleArchiveProject = async (projectId: string) => {
+    try {
+      await archiveProjectMutation.mutateAsync(Number(projectId));
+    } catch (error) {
+      // Error is handled by the mutation hook
+    }
   };
 
   const handleEditProject = (projectId: string) => {
-    window.location.href = `/projects/${projectId}/edit`;
+    navigate(`/projects/${projectId}/edit`);
   };
+
+  const stats = {
+    total: statsData?.totalProjects || 0,
+    active: statsData?.activeProjects || 0,
+    completed: statsData?.completedProjects || 0,
+    atRisk:
+      (statsData?.totalProjects || 0) -
+      (statsData?.activeProjects || 0) -
+      (statsData?.completedProjects || 0),
+  };
+
+  if (projectsError) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <DashboardHeader />
+        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="text-center py-12">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Failed to load projects
+            </h2>
+            <p className="text-gray-600 mb-4">
+              There was an error loading your projects. Please try again.
+            </p>
+            <Button onClick={() => window.location.reload()}>
+              Reload Page
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -97,7 +162,7 @@ export const ProjectsPage: React.FC = () => {
                     Total Projects
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {tempProjects.length}
+                    {isLoadingStats ? "..." : stats.total}
                   </div>
                 </div>
               </div>
@@ -115,7 +180,7 @@ export const ProjectsPage: React.FC = () => {
                     Active
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {tempProjects.filter((p) => p.status === "active").length}
+                    {isLoadingStats ? "..." : stats.active}
                   </div>
                 </div>
               </div>
@@ -133,10 +198,7 @@ export const ProjectsPage: React.FC = () => {
                     Completed
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {
-                      tempProjects.filter((p) => p.status === "completed")
-                        .length
-                    }
+                    {isLoadingStats ? "..." : stats.completed}
                   </div>
                 </div>
               </div>
@@ -154,13 +216,7 @@ export const ProjectsPage: React.FC = () => {
                     At Risk
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {
-                      tempProjects.filter(
-                        (p) =>
-                          p.healthStatus === "at_risk" ||
-                          p.healthStatus === "delayed"
-                      ).length
-                    }
+                    {isLoadingStats ? "..." : stats.atRisk}
                   </div>
                 </div>
               </div>
@@ -180,44 +236,41 @@ export const ProjectsPage: React.FC = () => {
             onViewModeChange={setViewMode}
           />
 
-          {filteredProjects.length > 0 ? (
-            <div
-              className={
-                viewMode === "grid"
-                  ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-                  : "space-y-4"
-              }
-            >
-              {filteredProjects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onArchive={handleArchiveProject}
-                  onEdit={handleEditProject}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <FolderOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No projects found
-              </h3>
-              <p className="text-gray-600 mb-6">
-                {searchTerm || statusFilter || priorityFilter
-                  ? "Try adjusting your filters"
-                  : "Get started by creating your first project"}
-              </p>
-              {!searchTerm && !statusFilter && !priorityFilter && (
-                <Link to="/projects/new">
-                  <Button
-                    icon={<Plus className="w-5 h-5" />}
-                    className="bg-gradient-to-r from-blue-600 to-purple-600"
-                  >
-                    Create Project
-                  </Button>
-                </Link>
-              )}
+          <ProjectList
+            projects={filteredProjects}
+            viewMode={viewMode}
+            onArchive={handleArchiveProject}
+            onEdit={handleEditProject}
+            loading={isLoadingProjects}
+          />
+
+          {projectsData && projectsData.totalElements > 12 && (
+            <div className="flex items-center justify-between pt-6">
+              <div className="text-sm text-gray-700">
+                Showing {currentPage * 12 + 1} to{" "}
+                {Math.min((currentPage + 1) * 12, projectsData.totalElements)}{" "}
+                of {projectsData.totalElements} projects
+              </div>
+
+              <div className="flex space-x-2">
+                <Button
+                  variant="outline"
+                  disabled={currentPage === 0}
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                >
+                  Previous
+                </Button>
+
+                <Button
+                  variant="outline"
+                  disabled={
+                    (currentPage + 1) * 12 >= projectsData.totalElements
+                  }
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </div>

@@ -12,178 +12,21 @@ import {
   Plus,
   MoreHorizontal,
   FileText,
-  MessageSquare,
   Star,
   Share2,
   Download,
   Settings,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Button } from "../../components/ui/Button";
-import { tempProjects } from "../../data/tempProjects";
-import toast from "react-hot-toast";
-
-// Mock data for project tasks
-const projectTasks = [
-  {
-    id: "1",
-    title: "Setup authentication system",
-    description: "Implement JWT-based authentication with refresh tokens",
-    status: "completed",
-    priority: "high",
-    assignee: {
-      name: "Alex Johnson",
-      avatar: null,
-      initials: "AJ",
-    },
-    dueDate: "2024-12-05",
-    completedDate: "2024-12-04",
-    progress: 100,
-  },
-  {
-    id: "2",
-    title: "Design product catalog UI",
-    description: "Create responsive product listing components",
-    status: "in_progress",
-    priority: "medium",
-    assignee: {
-      name: "Sarah Chen",
-      avatar: null,
-      initials: "SC",
-    },
-    dueDate: "2024-12-10",
-    completedDate: null,
-    progress: 65,
-  },
-  {
-    id: "3",
-    title: "Implement payment gateway",
-    description: "Integrate Stripe payment processing",
-    status: "todo",
-    priority: "critical",
-    assignee: {
-      name: "Mike Rodriguez",
-      avatar: null,
-      initials: "MR",
-    },
-    dueDate: "2024-12-12",
-    completedDate: null,
-    progress: 0,
-  },
-  {
-    id: "4",
-    title: "Setup CI/CD pipeline",
-    description: "Configure automated testing and deployment",
-    status: "in_progress",
-    priority: "medium",
-    assignee: {
-      name: "Emma Wilson",
-      avatar: null,
-      initials: "EW",
-    },
-    dueDate: "2024-12-15",
-    completedDate: null,
-    progress: 30,
-  },
-];
-
-// Mock data for project team members
-const projectTeam = [
-  {
-    id: "1",
-    name: "Sarah Chen",
-    email: "sarah@devflow.com",
-    role: "Project Manager",
-    avatar: null,
-    initials: "SC",
-    joinedDate: "2024-10-01",
-    isOnline: true,
-  },
-  {
-    id: "2",
-    name: "Alex Johnson",
-    email: "alex@devflow.com",
-    role: "Frontend Developer",
-    avatar: null,
-    initials: "AJ",
-    joinedDate: "2024-10-01",
-    isOnline: true,
-  },
-  {
-    id: "3",
-    name: "Mike Rodriguez",
-    email: "mike@devflow.com",
-    role: "Backend Developer",
-    avatar: null,
-    initials: "MR",
-    joinedDate: "2024-10-05",
-    isOnline: false,
-  },
-  {
-    id: "4",
-    name: "Emma Wilson",
-    email: "emma@devflow.com",
-    role: "UI/UX Designer",
-    avatar: null,
-    initials: "EW",
-    joinedDate: "2024-10-08",
-    isOnline: true,
-  },
-];
-
-// Mock data for recent activity
-const recentActivity = [
-  {
-    id: "1",
-    type: "task_completed",
-    user: "Alex Johnson",
-    action: "completed task",
-    target: "Setup authentication system",
-    time: "2 hours ago",
-    avatar: null,
-    initials: "AJ",
-  },
-  {
-    id: "2",
-    type: "comment",
-    user: "Sarah Chen",
-    action: "commented on",
-    target: "Design product catalog UI",
-    time: "4 hours ago",
-    avatar: null,
-    initials: "SC",
-  },
-  {
-    id: "3",
-    type: "task_created",
-    user: "Mike Rodriguez",
-    action: "created task",
-    target: "Implement payment gateway",
-    time: "1 day ago",
-    avatar: null,
-    initials: "MR",
-  },
-  {
-    id: "4",
-    type: "member_added",
-    user: "Sarah Chen",
-    action: "added",
-    target: "Emma Wilson to the project",
-    time: "2 days ago",
-    avatar: null,
-    initials: "SC",
-  },
-  {
-    id: "5",
-    type: "file_uploaded",
-    user: "Emma Wilson",
-    action: "uploaded",
-    target: "Design mockups v2.0",
-    time: "3 days ago",
-    avatar: null,
-    initials: "EW",
-  },
-];
+import {
+  useProject,
+  useProjectMembers,
+  useProjectHealth,
+  useArchiveProject,
+} from "../../hooks/useProjects";
 
 export const ProjectDetailPage: React.FC = () => {
   const { id } = useParams();
@@ -192,22 +35,50 @@ export const ProjectDetailPage: React.FC = () => {
     "overview" | "tasks" | "team" | "activity"
   >("overview");
 
-  const project = tempProjects.find((p) => p.id === id);
+  const {
+    data: project,
+    isLoading: isLoadingProject,
+    error: projectError,
+  } = useProject(id!);
 
-  if (!project) {
+  const { data: members, isLoading: isLoadingMembers } = useProjectMembers(id!);
+
+  const { data: healthData, isLoading: isLoadingHealth } = useProjectHealth(
+    id!
+  );
+
+  const archiveProjectMutation = useArchiveProject();
+
+  if (isLoadingProject) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <DashboardHeader />
+        <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600">Loading project...</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (projectError || !project) {
     return (
       <div className="min-h-screen bg-gray-50">
         <DashboardHeader />
         <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
           <div className="text-center py-12">
-            <h2 className="text-2xl font-bold text-gray-900">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
               Project not found
             </h2>
-            <Link
-              to="/projects"
-              className="text-blue-600 hover:text-blue-700 mt-4 inline-block"
-            >
-              Back to Projects
+            <p className="text-gray-600 mb-4">
+              The project you're looking for doesn't exist or you don't have
+              access to it.
+            </p>
+            <Link to="/projects">
+              <Button>Back to Projects</Button>
             </Link>
           </div>
         </main>
@@ -217,11 +88,11 @@ export const ProjectDetailPage: React.FC = () => {
 
   const getStatusColor = () => {
     switch (project.healthStatus) {
-      case "completed":
+      case "COMPLETED":
         return "bg-green-100 text-green-800";
-      case "at_risk":
+      case "AT_RISK":
         return "bg-yellow-100 text-yellow-800";
-      case "delayed":
+      case "DELAYED":
         return "bg-red-100 text-red-800";
       default:
         return "bg-blue-100 text-blue-800";
@@ -230,11 +101,11 @@ export const ProjectDetailPage: React.FC = () => {
 
   const getPriorityColor = () => {
     switch (project.priority) {
-      case "critical":
+      case "CRITICAL":
         return "bg-red-100 text-red-800";
-      case "high":
+      case "HIGH":
         return "bg-orange-100 text-orange-800";
-      case "medium":
+      case "MEDIUM":
         return "bg-yellow-100 text-yellow-800";
       default:
         return "bg-green-100 text-green-800";
@@ -250,125 +121,54 @@ export const ProjectDetailPage: React.FC = () => {
     });
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | null) => {
+    if (!amount) return "N/A";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
     }).format(amount);
   };
 
-  const handleArchiveProject = () => {
-    toast.success("Project archived successfully");
-    navigate("/projects");
+  const handleArchiveProject = async () => {
+    try {
+      await archiveProjectMutation.mutateAsync(project.id);
+      navigate("/projects");
+    } catch (error) {
+      // Error is handled by the mutation hook
+    }
   };
 
-  const TaskItem: React.FC<{ task: any }> = ({ task }) => {
-    const getTaskStatusColor = () => {
-      switch (task.status) {
-        case "completed":
-          return "bg-green-100 text-green-800";
-        case "in_progress":
-          return "bg-blue-100 text-blue-800";
-        default:
-          return "bg-gray-100 text-gray-800";
-      }
-    };
+  const getStatusText = (status: string) => {
+    return status.replace("_", " ").toUpperCase();
+  };
 
-    const getTaskPriorityColor = () => {
-      switch (task.priority) {
-        case "critical":
-          return "border-l-red-500";
-        case "high":
-          return "border-l-orange-500";
-        case "medium":
-          return "border-l-yellow-500";
-        default:
-          return "border-l-green-500";
-      }
-    };
-
-    return (
-      <div
-        className={`bg-white rounded-lg border-l-4 ${getTaskPriorityColor()} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-shadow`}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h4 className="font-medium text-gray-900">{task.title}</h4>
-            <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-
-            <div className="mt-3 mb-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-gray-700">
-                  Progress
-                </span>
-                <span className="text-xs text-gray-600">{task.progress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-1.5">
-                <div
-                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${task.progress}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <span
-                className={`px-2 py-1 rounded-full text-xs font-medium ${getTaskStatusColor()}`}
-              >
-                {task.status.replace("_", " ").toUpperCase()}
-              </span>
-              <span className="text-sm text-gray-500">
-                Due: {formatDate(task.dueDate)}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            {task.assignee.avatar ? (
-              <img
-                src={task.assignee.avatar}
-                alt={task.assignee.name}
-                className="w-8 h-8 rounded-full"
-              />
-            ) : (
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                {task.assignee.initials}
-              </div>
-            )}
-            <button className="p-1 hover:bg-gray-100 rounded transition-colors">
-              <MoreHorizontal className="w-4 h-4 text-gray-400" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  const getPriorityText = (priority: string) => {
+    return priority.charAt(0) + priority.slice(1).toLowerCase() + " Priority";
   };
 
   const TeamMember: React.FC<{ member: any }> = ({ member }) => (
     <div className="flex items-center space-x-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
       <div className="relative">
-        {member.avatar ? (
+        {member.user.avatar ? (
           <img
-            src={member.avatar}
-            alt={member.name}
+            src={member.user.avatar}
+            alt={member.user.firstName + " " + member.user.lastName}
             className="w-12 h-12 rounded-full"
           />
         ) : (
           <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-medium">
-            {member.initials}
+            {member.user.firstName[0]}
+            {member.user.lastName[0]}
           </div>
         )}
-
-        <div
-          className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-white rounded-full ${
-            member.isOnline ? "bg-green-500" : "bg-gray-400"
-          }`}
-        ></div>
       </div>
       <div className="flex-1">
-        <h4 className="font-medium text-gray-900">{member.name}</h4>
-        <p className="text-sm text-gray-600">{member.role}</p>
+        <h4 className="font-medium text-gray-900">
+          {member.user.firstName} {member.user.lastName}
+        </h4>
+        <p className="text-sm text-gray-600">{member.role.replace("_", " ")}</p>
         <p className="text-xs text-gray-500">
-          Joined {formatDate(member.joinedDate)}
+          Joined {formatDate(member.joinedAt)}
         </p>
       </div>
       <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
@@ -376,54 +176,6 @@ export const ProjectDetailPage: React.FC = () => {
       </button>
     </div>
   );
-
-  const ActivityItem: React.FC<{ activity: any }> = ({ activity }) => {
-    const getActivityIcon = () => {
-      switch (activity.type) {
-        case "task_completed":
-          return <CheckSquare className="w-4 h-4 text-green-600" />;
-        case "comment":
-          return <MessageSquare className="w-4 h-4 text-blue-600" />;
-        case "task_created":
-          return <Plus className="w-4 h-4 text-purple-600" />;
-        case "member_added":
-          return <Users className="w-4 h-4 text-indigo-600" />;
-        case "file_uploaded":
-          return <FileText className="w-4 h-4 text-orange-600" />;
-        default:
-          return <Activity className="w-4 h-4 text-gray-600" />;
-      }
-    };
-
-    return (
-      <div className="flex items-start space-x-3 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-        <div className="relative">
-          {activity.avatar ? (
-            <img
-              src={activity.avatar}
-              alt={activity.user}
-              className="w-8 h-8 rounded-full"
-            />
-          ) : (
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
-              {activity.initials}
-            </div>
-          )}
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center border-2 border-white">
-            {getActivityIcon()}
-          </div>
-        </div>
-        <div className="flex-1">
-          <p className="text-sm text-gray-900">
-            <span className="font-medium">{activity.user}</span>{" "}
-            {activity.action}{" "}
-            <span className="font-medium">{activity.target}</span>
-          </p>
-          <p className="text-xs text-gray-500">{activity.time}</p>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -451,7 +203,7 @@ export const ProjectDetailPage: React.FC = () => {
                   <span
                     className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor()}`}
                   >
-                    {project.healthStatus.replace("_", " ").toUpperCase()}
+                    {getStatusText(project.healthStatus)}
                   </span>
                 </div>
                 <p className="text-gray-600 mt-1">{project.description}</p>
@@ -473,6 +225,7 @@ export const ProjectDetailPage: React.FC = () => {
               <Button
                 variant="outline"
                 onClick={handleArchiveProject}
+                loading={archiveProjectMutation.isPending}
                 icon={<Archive className="w-4 h-4" />}
                 className="text-red-600 border-red-600 hover:bg-red-50"
               >
@@ -513,7 +266,7 @@ export const ProjectDetailPage: React.FC = () => {
                 <div className="ml-4">
                   <div className="text-sm font-medium text-gray-600">Tasks</div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {project.tasksCompleted}/{project.totalTasks}
+                    {project.completedTasks}/{project.totalTasks}
                   </div>
                 </div>
               </div>
@@ -541,7 +294,7 @@ export const ProjectDetailPage: React.FC = () => {
                     Budget
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {project.budget ? formatCurrency(project.budget) : "N/A"}
+                    {formatCurrency(project.budget)}
                   </div>
                 </div>
               </div>
@@ -599,9 +352,7 @@ export const ProjectDetailPage: React.FC = () => {
                               <span
                                 className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor()}`}
                               >
-                                {project.priority.charAt(0).toUpperCase() +
-                                  project.priority.slice(1)}{" "}
-                                Priority
+                                {getPriorityText(project.priority)}
                               </span>
                             </div>
                           </div>
@@ -611,8 +362,7 @@ export const ProjectDetailPage: React.FC = () => {
                             </label>
                             <div className="mt-1">
                               <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                                {project.status.charAt(0).toUpperCase() +
-                                  project.status.slice(1)}
+                                {project.status.replace("_", " ")}
                               </span>
                             </div>
                           </div>
@@ -633,7 +383,7 @@ export const ProjectDetailPage: React.FC = () => {
                               Start Date
                             </label>
                             <div className="mt-1 text-gray-900">
-                              {formatDate(project.startDate || null)}
+                              {formatDate(project.startDate)}
                             </div>
                           </div>
                           <div>
@@ -657,25 +407,43 @@ export const ProjectDetailPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-xl border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        Recent Tasks
+                  {healthData && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        Project Health
                       </h3>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setActiveTab("tasks")}
-                      >
-                        View All
-                      </Button>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-600">
+                            Risk Score
+                          </span>
+                          <span className="text-2xl font-bold text-gray-900">
+                            {Math.round(healthData.riskScore)}%
+                          </span>
+                        </div>
+                        <p className="text-gray-700">{healthData.message}</p>
+                        {healthData.suggestions.length > 0 && (
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-2">
+                              Suggestions:
+                            </h4>
+                            <ul className="space-y-1">
+                              {healthData.suggestions.map(
+                                (suggestion, index) => (
+                                  <li
+                                    key={index}
+                                    className="text-sm text-gray-600"
+                                  >
+                                    • {suggestion}
+                                  </li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="space-y-3">
-                      {projectTasks.slice(0, 3).map((task) => (
-                        <TaskItem key={task.id} task={task} />
-                      ))}
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="space-y-6">
@@ -693,39 +461,49 @@ export const ProjectDetailPage: React.FC = () => {
                       </Button>
                     </div>
                     <div className="space-y-3">
-                      {projectTeam.slice(0, 4).map((member) => (
-                        <div
-                          key={member.id}
-                          className="flex items-center space-x-3"
-                        >
-                          <div className="relative">
-                            {member.avatar ? (
-                              <img
-                                src={member.avatar}
-                                alt={member.name}
-                                className="w-10 h-10 rounded-full"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                                {member.initials}
-                              </div>
-                            )}
-                            <div
-                              className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-white rounded-full ${
-                                member.isOnline ? "bg-green-500" : "bg-gray-400"
-                              }`}
-                            ></div>
-                          </div>
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900">
-                              {member.name}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              {member.role}
-                            </div>
-                          </div>
+                      {isLoadingMembers ? (
+                        <div className="text-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
                         </div>
-                      ))}
+                      ) : members && members.length > 0 ? (
+                        members.slice(0, 4).map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center space-x-3"
+                          >
+                            <div className="relative">
+                              {member.user.avatar ? (
+                                <img
+                                  src={member.user.avatar}
+                                  alt={
+                                    member.user.firstName +
+                                    " " +
+                                    member.user.lastName
+                                  }
+                                  className="w-10 h-10 rounded-full"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                  {member.user.firstName[0]}
+                                  {member.user.lastName[0]}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">
+                                {member.user.firstName} {member.user.lastName}
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {member.role.replace("_", " ")}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-gray-500 text-sm">
+                          No team members yet
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -776,10 +554,13 @@ export const ProjectDetailPage: React.FC = () => {
                   </h3>
                   <Button icon={<Plus className="w-4 h-4" />}>Add Task</Button>
                 </div>
-                <div className="space-y-4">
-                  {projectTasks.map((task) => (
-                    <TaskItem key={task.id} task={task} />
-                  ))}
+                <div className="bg-white rounded-xl border border-gray-200 p-6">
+                  <div className="text-center py-8">
+                    <CheckSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">
+                      Task management will be implemented in the next phase
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -794,11 +575,30 @@ export const ProjectDetailPage: React.FC = () => {
                     Invite Member
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {projectTeam.map((member) => (
-                    <TeamMember key={member.id} member={member} />
-                  ))}
-                </div>
+                {isLoadingMembers ? (
+                  <div className="bg-white rounded-xl border border-gray-200 p-6">
+                    <div className="text-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+                      <p className="text-gray-500">Loading team members...</p>
+                    </div>
+                  </div>
+                ) : members && members.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {members.map((member) => (
+                      <TeamMember key={member.id} member={member} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl border border-gray-200 p-6">
+                    <div className="text-center py-8">
+                      <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-500 mb-4">No team members yet</p>
+                      <Button icon={<Plus className="w-4 h-4" />}>
+                        Invite First Member
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -807,10 +607,13 @@ export const ProjectDetailPage: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-900">
                   Recent Activity
                 </h3>
-                <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-                  {recentActivity.map((activity) => (
-                    <ActivityItem key={activity.id} activity={activity} />
-                  ))}
+                <div className="bg-white rounded-xl border border-gray-200 p-6">
+                  <div className="text-center py-8">
+                    <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">
+                      Activity feed will be implemented in the next phase
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

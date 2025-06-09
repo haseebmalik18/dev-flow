@@ -14,16 +14,10 @@ import {
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import toast from "react-hot-toast";
+import { useCreateProject } from "../../hooks/useProjects";
+import type { CreateProjectRequest } from "../../services/projectService";
 
-interface CreateProjectFormData {
-  name: string;
-  description: string;
-  priority: "low" | "medium" | "high" | "critical";
-  startDate: string;
-  dueDate: string;
-  budget: number;
-  color: string;
+interface CreateProjectFormData extends CreateProjectRequest {
   templateId?: string;
 }
 
@@ -82,10 +76,10 @@ const projectTemplates = [
 ];
 
 const priorityColors = {
-  low: "bg-green-100 text-green-800 border-green-200",
-  medium: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  high: "bg-orange-100 text-orange-800 border-orange-200",
-  critical: "bg-red-100 text-red-800 border-red-200",
+  LOW: "bg-green-100 text-green-800 border-green-200",
+  MEDIUM: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  HIGH: "bg-orange-100 text-orange-800 border-orange-200",
+  CRITICAL: "bg-red-100 text-red-800 border-red-200",
 };
 
 const colorOptions = [
@@ -105,7 +99,8 @@ export const NewProjectPage: React.FC = () => {
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState(colorOptions[0]);
-  const [isLoading, setIsLoading] = useState(false);
+
+  const createProjectMutation = useCreateProject();
 
   const {
     register,
@@ -115,7 +110,7 @@ export const NewProjectPage: React.FC = () => {
     formState: { errors },
   } = useForm<CreateProjectFormData>({
     defaultValues: {
-      priority: "medium",
+      priority: "MEDIUM",
       color: colorOptions[0],
     },
   });
@@ -124,24 +119,21 @@ export const NewProjectPage: React.FC = () => {
   const watchPriority = watch("priority");
 
   const onSubmit = async (data: CreateProjectFormData) => {
-    setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      const projectData = {
-        ...data,
-        templateId: selectedTemplate,
+      const projectData: CreateProjectRequest = {
+        name: data.name,
+        description: data.description || undefined,
+        priority: data.priority,
+        startDate: data.startDate || undefined,
+        dueDate: data.dueDate || undefined,
         color: selectedColor,
+        budget: data.budget || undefined,
       };
 
-      console.log("Creating project:", projectData);
-      toast.success("Project created successfully!");
+      await createProjectMutation.mutateAsync(projectData);
       navigate("/projects");
     } catch (error) {
-      toast.error("Failed to create project");
-    } finally {
-      setIsLoading(false);
+      // Error is handled by the mutation hook
     }
   };
 
@@ -162,6 +154,21 @@ export const NewProjectPage: React.FC = () => {
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
     setValue("color", color);
+  };
+
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case "LOW":
+        return "Low Priority";
+      case "MEDIUM":
+        return "Medium Priority";
+      case "HIGH":
+        return "High Priority";
+      case "CRITICAL":
+        return "Critical Priority";
+      default:
+        return "Medium Priority";
+    }
   };
 
   return (
@@ -264,20 +271,18 @@ export const NewProjectPage: React.FC = () => {
                       {...register("priority")}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="low">Low Priority</option>
-                      <option value="medium">Medium Priority</option>
-                      <option value="high">High Priority</option>
-                      <option value="critical">Critical Priority</option>
+                      <option value="LOW">Low Priority</option>
+                      <option value="MEDIUM">Medium Priority</option>
+                      <option value="HIGH">High Priority</option>
+                      <option value="CRITICAL">Critical Priority</option>
                     </select>
                     <div className="mt-2">
                       <span
                         className={`inline-flex px-3 py-1 rounded-full text-sm font-medium border ${
-                          priorityColors[watchPriority || "medium"]
+                          priorityColors[watchPriority || "MEDIUM"]
                         }`}
                       >
-                        {(watchPriority || "medium").charAt(0).toUpperCase() +
-                          (watchPriority || "medium").slice(1)}{" "}
-                        Priority
+                        {getPriorityLabel(watchPriority || "MEDIUM")}
                       </span>
                     </div>
                   </div>
@@ -313,6 +318,7 @@ export const NewProjectPage: React.FC = () => {
                   <Input
                     {...register("budget", {
                       min: { value: 0, message: "Budget must be positive" },
+                      valueAsNumber: true,
                     })}
                     type="number"
                     label="Budget (Optional)"
@@ -396,22 +402,14 @@ export const NewProjectPage: React.FC = () => {
 
               <div className="flex space-x-3">
                 <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    // Save as draft functionality
-                    toast.success("Project saved as draft");
-                  }}
-                >
-                  Save as Draft
-                </Button>
-                <Button
                   type="submit"
-                  loading={isLoading}
+                  loading={createProjectMutation.isPending}
                   icon={<Save className="w-5 h-5" />}
                   className="bg-gradient-to-r from-blue-600 to-purple-600"
                 >
-                  {isLoading ? "Creating Project..." : "Create Project"}
+                  {createProjectMutation.isPending
+                    ? "Creating Project..."
+                    : "Create Project"}
                 </Button>
               </div>
             </div>

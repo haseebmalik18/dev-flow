@@ -1,5 +1,6 @@
 import React from "react";
 import { Plus, Users, Calendar, BarChart3, Zap } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface QuickActionProps {
   icon: React.ReactNode;
@@ -19,7 +20,7 @@ const QuickAction: React.FC<QuickActionProps> = ({
   return (
     <button
       onClick={onClick}
-      className="flex items-center space-x-4 p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 text-left group"
+      className="flex items-center space-x-4 p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all duration-200 text-left group cursor-pointer"
     >
       <div
         className={`p-3 rounded-lg ${color} group-hover:scale-110 transition-transform`}
@@ -38,12 +39,14 @@ const QuickAction: React.FC<QuickActionProps> = ({
 };
 
 export const QuickActions: React.FC = () => {
+  const navigate = useNavigate();
+
   const actions = [
     {
       icon: <Plus className="w-6 h-6 text-blue-600" />,
       title: "New Project",
       description: "Create a new project workspace",
-      onClick: () => console.log("New project"),
+      onClick: () => navigate("/projects/new"),
       color: "bg-blue-100",
     },
     {

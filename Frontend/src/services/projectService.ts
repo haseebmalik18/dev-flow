@@ -34,6 +34,22 @@ export interface Project {
   healthStatus: "ON_TRACK" | "AT_RISK" | "DELAYED" | "COMPLETED";
 }
 
+export interface ProjectSummary {
+  id: number;
+  name: string;
+  description: string;
+  status: "PLANNING" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
+  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  dueDate: string | null;
+  color: string;
+  progress: number;
+  teamSize: number;
+  totalTasks: number;
+  completedTasks: number;
+  healthStatus: "ON_TRACK" | "AT_RISK" | "DELAYED" | "COMPLETED";
+  updatedAt: string;
+}
+
 export interface ProjectMember {
   id: number;
   user: {
@@ -115,7 +131,13 @@ export const projectService = {
     page = 0,
     size = 10,
     search?: string
-  ): Promise<ApiResponse<{ content: Project[]; totalElements: number }>> => {
+  ): Promise<
+    ApiResponse<{
+      content: ProjectSummary[];
+      totalElements: number;
+      totalPages: number;
+    }>
+  > => {
     const params = new URLSearchParams({
       page: page.toString(),
       size: size.toString(),
