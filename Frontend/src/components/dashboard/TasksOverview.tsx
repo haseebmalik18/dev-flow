@@ -1,24 +1,33 @@
 import React from "react";
-import { CheckSquare, AlertTriangle, MoreHorizontal } from "lucide-react";
+import {
+  CheckSquare,
+  AlertTriangle,
+  MoreHorizontal,
+  Loader2,
+} from "lucide-react";
+import { useTasksOverview } from "../../hooks/useDashboard";
 
-interface Task {
-  id: string;
-  title: string;
-  project: string;
-  assignee: {
-    name: string;
-    avatar?: string;
-    initials: string;
+interface TaskItemProps {
+  task: {
+    id: number;
+    title: string;
+    status: string;
+    priority: string;
+    dueDate: string | null;
+    isOverdue: boolean;
+    progress: number;
+    project: string;
+    assignee: {
+      name: string;
+      initials: string;
+      avatar: string | null;
+    } | null;
   };
-  priority: "low" | "medium" | "high" | "critical";
-  status: "todo" | "in-progress" | "review" | "done";
-  dueDate: string;
-  isOverdue: boolean;
 }
 
-const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
+const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
   const getPriorityColor = () => {
-    switch (task.priority) {
+    switch (task.priority?.toLowerCase()) {
       case "critical":
         return "bg-red-500";
       case "high":
@@ -31,12 +40,12 @@ const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   };
 
   const getStatusColor = () => {
-    switch (task.status) {
+    switch (task.status?.toLowerCase()) {
       case "done":
         return "bg-green-100 text-green-800";
       case "review":
         return "bg-blue-100 text-blue-800";
-      case "in-progress":
+      case "in_progress":
         return "bg-orange-100 text-orange-800";
       default:
         return "bg-gray-100 text-gray-800";
@@ -44,16 +53,32 @@ const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   };
 
   const getStatusText = () => {
-    switch (task.status) {
+    switch (task.status?.toLowerCase()) {
       case "done":
         return "Done";
       case "review":
         return "Review";
-      case "in-progress":
+      case "in_progress":
         return "In Progress";
       default:
         return "To Do";
     }
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "No due date";
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = date.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Tomorrow";
+    if (diffDays === -1) return "Yesterday";
+    if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
+    if (diffDays < 7) return `${diffDays} days`;
+
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
   return (
@@ -73,20 +98,26 @@ const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-1">
-              {task.assignee.avatar ? (
-                <img
-                  src={task.assignee.avatar}
-                  alt={task.assignee.name}
-                  className="w-6 h-6 rounded-full"
-                />
+              {task.assignee ? (
+                <>
+                  {task.assignee.avatar ? (
+                    <img
+                      src={task.assignee.avatar}
+                      alt={task.assignee.name}
+                      className="w-6 h-6 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                      {task.assignee.initials}
+                    </div>
+                  )}
+                  <span className="text-sm text-gray-600">
+                    {task.assignee.name}
+                  </span>
+                </>
               ) : (
-                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
-                  {task.assignee.initials}
-                </div>
+                <span className="text-sm text-gray-400">Unassigned</span>
               )}
-              <span className="text-sm text-gray-600">
-                {task.assignee.name}
-              </span>
             </div>
 
             <span
@@ -105,7 +136,7 @@ const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
                 task.isOverdue ? "text-red-600" : "text-gray-500"
               }`}
             >
-              {task.dueDate}
+              {formatDate(task.dueDate)}
             </span>
           </div>
         </div>
@@ -114,81 +145,61 @@ const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
   );
 };
 
-export const TasksOverview: React.FC = () => {
-  const tasks: Task[] = [
-    {
-      id: "1",
-      title: "Implement user authentication",
-      project: "E-commerce Platform",
-      assignee: {
-        name: "Alex Johnson",
-        initials: "AJ",
-      },
-      priority: "high",
-      status: "in-progress",
-      dueDate: "Today",
-      isOverdue: false,
-    },
-    {
-      id: "2",
-      title: "Design product catalog UI",
-      project: "Mobile App Redesign",
-      assignee: {
-        name: "Sarah Chen",
-        initials: "SC",
-      },
-      priority: "medium",
-      status: "review",
-      dueDate: "Tomorrow",
-      isOverdue: false,
-    },
-    {
-      id: "3",
-      title: "Fix payment gateway bug",
-      project: "E-commerce Platform",
-      assignee: {
-        name: "Mike Rodriguez",
-        initials: "MR",
-      },
-      priority: "critical",
-      status: "todo",
-      dueDate: "2 days ago",
-      isOverdue: true,
-    },
-    {
-      id: "4",
-      title: "Update API documentation",
-      project: "API Gateway",
-      assignee: {
-        name: "Emma Wilson",
-        initials: "EW",
-      },
-      priority: "low",
-      status: "done",
-      dueDate: "Dec 8",
-      isOverdue: false,
-    },
-    {
-      id: "5",
-      title: "Optimize database queries",
-      project: "E-commerce Platform",
-      assignee: {
-        name: "David Park",
-        initials: "DP",
-      },
-      priority: "medium",
-      status: "in-progress",
-      dueDate: "Dec 12",
-      isOverdue: false,
-    },
-  ];
+const TaskItemSkeleton: React.FC = () => (
+  <div className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg animate-pulse">
+    <div className="w-1 h-12 bg-gray-200 rounded-full"></div>
+    <div className="flex-1">
+      <div className="flex justify-between mb-1">
+        <div className="h-5 bg-gray-200 rounded w-48"></div>
+        <div className="w-4 h-4 bg-gray-200 rounded"></div>
+      </div>
+      <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
+      <div className="flex justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="w-6 h-6 bg-gray-200 rounded-full"></div>
+          <div className="h-4 bg-gray-200 rounded w-20"></div>
+          <div className="h-6 bg-gray-200 rounded w-16"></div>
+        </div>
+        <div className="h-4 bg-gray-200 rounded w-12"></div>
+      </div>
+    </div>
+  </div>
+);
 
-  const taskStats = {
-    total: tasks.length,
-    completed: tasks.filter((t) => t.status === "done").length,
-    inProgress: tasks.filter((t) => t.status === "in-progress").length,
-    overdue: tasks.filter((t) => t.isOverdue).length,
+export const TasksOverview: React.FC = () => {
+  const { data: taskData, isLoading, error } = useTasksOverview();
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-2">
+            <CheckSquare className="w-5 h-5 text-green-600" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Tasks
+            </h2>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="flex items-center space-x-2 text-red-600">
+            <AlertTriangle className="w-5 h-5" />
+            <span>Failed to load tasks</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const taskStats = taskData?.stats || {
+    total: 0,
+    todo: 0,
+    inProgress: 0,
+    review: 0,
+    completed: 0,
+    overdue: 0,
   };
+
+  const recentTasks = taskData?.recentTasks || [];
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -202,38 +213,71 @@ export const TasksOverview: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-lg font-bold text-gray-900">
-            {taskStats.total}
+      {isLoading ? (
+        <>
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div
+                key={index}
+                className="text-center p-3 bg-gray-50 rounded-lg animate-pulse"
+              >
+                <div className="h-6 bg-gray-200 rounded w-8 mx-auto mb-1"></div>
+                <div className="h-4 bg-gray-200 rounded w-12 mx-auto"></div>
+              </div>
+            ))}
           </div>
-          <div className="text-sm text-gray-600">Total</div>
-        </div>
-        <div className="text-center p-3 bg-green-50 rounded-lg">
-          <div className="text-lg font-bold text-green-600">
-            {taskStats.completed}
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <TaskItemSkeleton key={index} />
+            ))}
           </div>
-          <div className="text-sm text-gray-600">Completed</div>
-        </div>
-        <div className="text-center p-3 bg-blue-50 rounded-lg">
-          <div className="text-lg font-bold text-blue-600">
-            {taskStats.inProgress}
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <div className="text-lg font-bold text-gray-900">
+                {taskStats.total}
+              </div>
+              <div className="text-sm text-gray-600">Total</div>
+            </div>
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <div className="text-lg font-bold text-green-600">
+                {taskStats.completed}
+              </div>
+              <div className="text-sm text-gray-600">Completed</div>
+            </div>
+            <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <div className="text-lg font-bold text-blue-600">
+                {taskStats.inProgress}
+              </div>
+              <div className="text-sm text-gray-600">In Progress</div>
+            </div>
+            <div className="text-center p-3 bg-red-50 rounded-lg">
+              <div className="text-lg font-bold text-red-600">
+                {taskStats.overdue}
+              </div>
+              <div className="text-sm text-gray-600">Overdue</div>
+            </div>
           </div>
-          <div className="text-sm text-gray-600">In Progress</div>
-        </div>
-        <div className="text-center p-3 bg-red-50 rounded-lg">
-          <div className="text-lg font-bold text-red-600">
-            {taskStats.overdue}
-          </div>
-          <div className="text-sm text-gray-600">Overdue</div>
-        </div>
-      </div>
 
-      <div className="space-y-3">
-        {tasks.map((task) => (
-          <TaskItem key={task.id} task={task} />
-        ))}
-      </div>
+          {recentTasks.length > 0 ? (
+            <div className="space-y-3">
+              {recentTasks.map((task) => (
+                <TaskItem key={task.id} task={task} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="text-gray-500">
+                <CheckSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium mb-2">No tasks yet</p>
+                <p className="text-sm">Create your first task to get started</p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };

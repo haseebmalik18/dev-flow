@@ -1,9 +1,13 @@
 import React from "react";
 import { Bell, Search, Settings, LogOut, Code2 } from "lucide-react";
 import { useAuthStore } from "../../hooks/useAuthStore";
+import { useUserProfile } from "../../hooks/useDashboard";
 
 export const DashboardHeader: React.FC = () => {
-  const { user, clearAuth } = useAuthStore();
+  const { user: authUser, clearAuth } = useAuthStore();
+  const { data: profileData } = useUserProfile();
+
+  const user = profileData || authUser;
 
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
@@ -14,6 +18,10 @@ export const DashboardHeader: React.FC = () => {
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
+  };
+
+  const getRoleDisplay = (role: string) => {
+    return role.charAt(0) + role.slice(1).toLowerCase();
   };
 
   return (
@@ -60,7 +68,9 @@ export const DashboardHeader: React.FC = () => {
                 <p className="text-sm font-medium text-gray-900">
                   {getGreeting()}, {user?.firstName}!
                 </p>
-                <p className="text-xs text-gray-500">{user?.role}</p>
+                <p className="text-xs text-gray-500">
+                  {user?.jobTitle || getRoleDisplay(user?.role || "")}
+                </p>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -68,7 +78,7 @@ export const DashboardHeader: React.FC = () => {
                   <img
                     src={user.avatar}
                     alt={`${user.firstName} ${user.lastName}`}
-                    className="w-8 h-8 rounded-full"
+                    className="w-8 h-8 rounded-full object-cover"
                   />
                 ) : (
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-medium">

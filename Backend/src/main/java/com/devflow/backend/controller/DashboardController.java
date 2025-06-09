@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,15 +39,14 @@ public class DashboardController {
                 .findProjectsByUserMembership(user, Pageable.unpaged());
         List<Project> userProjects = userProjectsPage.getContent();
 
+        Page<Task> userTasksPage = taskRepository
+                .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
+        List<Task> userTasks = userTasksPage.getContent();
+
 
         long activeProjects = userProjects.stream()
                 .filter(p -> p.getStatus() == ProjectStatus.ACTIVE)
                 .count();
-
-
-        Page<Task> userTasksPage = taskRepository
-                .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
-        List<Task> userTasks = userTasksPage.getContent();
 
         long completedTasks = userTasks.stream()
                 .filter(t -> t.getStatus() == TaskStatus.DONE)
@@ -56,24 +56,29 @@ public class DashboardController {
                 .filter(Task::isOverdue)
                 .count();
 
-        // Calculate total hours (dummy calculation for now)
         String hoursTracked = calculateHoursTracked(userTasks);
-
 
         long teamMembers = userProjects.stream()
                 .mapToLong(Project::getTeamSize)
                 .sum();
 
-        // Calculate month-over-month changes (dummy data for now)
+
+        LocalDateTime lastMonth = LocalDateTime.now().minus(1, ChronoUnit.MONTHS);
+
+        double activeProjectsChange = calculateActiveProjectsChange(user, lastMonth);
+        double completedTasksChange = calculateCompletedTasksChange(user, lastMonth);
+        double hoursTrackedChange = calculateHoursTrackedChange(user, lastMonth);
+        double teamMembersChange = calculateTeamMembersChange(user, lastMonth);
+
         Map<String, Object> stats = new HashMap<>();
         stats.put("activeProjects", activeProjects);
-        stats.put("activeProjectsChange", 8.2); // TODO: Calculate real change
+        stats.put("activeProjectsChange", activeProjectsChange);
         stats.put("completedTasks", completedTasks);
-        stats.put("completedTasksChange", 12.5); // TODO: Calculate real change
+        stats.put("completedTasksChange", completedTasksChange);
         stats.put("hoursTracked", hoursTracked);
-        stats.put("hoursTrackedChange", -2.3); // TODO: Calculate real change
+        stats.put("hoursTrackedChange", hoursTrackedChange);
         stats.put("teamMembers", teamMembers);
-        stats.put("teamMembersChange", 0.0); // TODO: Calculate real change
+        stats.put("teamMembersChange", teamMembersChange);
         stats.put("overdueTasks", overdueTasks);
 
         return ResponseEntity.ok(ApiResponse.success("Dashboard stats retrieved successfully", stats));
@@ -120,13 +125,11 @@ public class DashboardController {
 
         User user = (User) authentication.getPrincipal();
 
-
         Page<Task> userTasksPage = taskRepository
                 .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, PageRequest.of(0, 10));
         List<Task> userTasks = userTasksPage.getContent();
 
         Map<String, Object> taskOverview = new HashMap<>();
-
 
         Map<String, Long> taskStats = new HashMap<>();
         taskStats.put("total", (long) userTasks.size());
@@ -135,7 +138,6 @@ public class DashboardController {
         taskStats.put("review", userTasks.stream().filter(t -> t.getStatus() == TaskStatus.REVIEW).count());
         taskStats.put("completed", userTasks.stream().filter(t -> t.getStatus() == TaskStatus.DONE).count());
         taskStats.put("overdue", userTasks.stream().filter(Task::isOverdue).count());
-
 
         List<Map<String, Object>> recentTasks = userTasks.stream()
                 .limit(5)
@@ -171,12 +173,118 @@ public class DashboardController {
     }
 
 
+
     private String calculateHoursTracked(List<Task> tasks) {
         int totalHours = tasks.stream()
                 .filter(t -> t.getActualHours() != null)
                 .mapToInt(Task::getActualHours)
                 .sum();
         return totalHours + "h";
+    }
+
+    private double calculateActiveProjectsChange(User user, LocalDateTime lastMonth) {
+        try {
+
+            Page<Project> currentProjects = projectRepository.findProjectsByUserMembership(user, Pageable.unpaged());
+            long currentActiveCount = currentProjects.getContent().stream()
+                    .filter(p -> p.getStatus() == ProjectStatus.ACTIVE)
+                    .count();
+
+
+            long lastMonthActiveCount = currentProjects.getContent().stream()
+                    .filter(p -> p.getCreatedAt().isBefore(lastMonth))
+                    .filter(p -> p.getStatus() == ProjectStatus.ACTIVE || p.getStatus() == ProjectStatus.COMPLETED)
+                    .count();
+
+            if (lastMonthActiveCount == 0) {
+                return currentActiveCount > 0 ? 100.0 : 0.0;
+            }
+
+            return ((double) (currentActiveCount - lastMonthActiveCount) / lastMonthActiveCount) * 100;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private double calculateCompletedTasksChange(User user, LocalDateTime lastMonth) {
+        try {
+
+            Page<Task> currentTasks = taskRepository.findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
+            long currentCompletedCount = currentTasks.getContent().stream()
+                    .filter(t -> t.getStatus() == TaskStatus.DONE)
+                    .filter(t -> t.getCompletedDate() != null && t.getCompletedDate().isAfter(lastMonth))
+                    .count();
+
+
+            LocalDateTime twoMonthsAgo = lastMonth.minus(1, ChronoUnit.MONTHS);
+            long lastMonthCompletedCount = currentTasks.getContent().stream()
+                    .filter(t -> t.getStatus() == TaskStatus.DONE)
+                    .filter(t -> t.getCompletedDate() != null)
+                    .filter(t -> t.getCompletedDate().isAfter(twoMonthsAgo) && t.getCompletedDate().isBefore(lastMonth))
+                    .count();
+
+            if (lastMonthCompletedCount == 0) {
+                return currentCompletedCount > 0 ? 100.0 : 0.0;
+            }
+
+            return ((double) (currentCompletedCount - lastMonthCompletedCount) / lastMonthCompletedCount) * 100;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private double calculateHoursTrackedChange(User user, LocalDateTime lastMonth) {
+        try {
+            Page<Task> currentTasks = taskRepository.findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
+
+
+            int currentMonthHours = currentTasks.getContent().stream()
+                    .filter(t -> t.getActualHours() != null)
+                    .filter(t -> t.getUpdatedAt().isAfter(lastMonth))
+                    .mapToInt(Task::getActualHours)
+                    .sum();
+
+
+            LocalDateTime twoMonthsAgo = lastMonth.minus(1, ChronoUnit.MONTHS);
+            int lastMonthHours = currentTasks.getContent().stream()
+                    .filter(t -> t.getActualHours() != null)
+                    .filter(t -> t.getUpdatedAt().isAfter(twoMonthsAgo) && t.getUpdatedAt().isBefore(lastMonth))
+                    .mapToInt(Task::getActualHours)
+                    .sum();
+
+            if (lastMonthHours == 0) {
+                return currentMonthHours > 0 ? 100.0 : 0.0;
+            }
+
+            return ((double) (currentMonthHours - lastMonthHours) / lastMonthHours) * 100;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private double calculateTeamMembersChange(User user, LocalDateTime lastMonth) {
+        try {
+            Page<Project> currentProjects = projectRepository.findProjectsByUserMembership(user, Pageable.unpaged());
+
+
+            long currentTeamMembers = currentProjects.getContent().stream()
+                    .mapToLong(Project::getTeamSize)
+                    .sum();
+
+
+            long lastMonthTeamMembers = currentProjects.getContent().stream()
+                    .filter(p -> p.getCreatedAt().isBefore(lastMonth))
+                    .mapToLong(Project::getTeamSize)
+                    .sum();
+
+            if (lastMonthTeamMembers == 0) {
+                return currentTeamMembers > 0 ? 100.0 : 0.0;
+            }
+
+            return ((double) (currentTeamMembers - lastMonthTeamMembers) / lastMonthTeamMembers) * 100;
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 
     private Map<String, Object> mapActivityToResponse(Activity activity) {
@@ -186,18 +294,15 @@ public class DashboardController {
         activityMap.put("description", activity.getDescription());
         activityMap.put("createdAt", activity.getCreatedAt());
 
-
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("name", activity.getUser().getFullName());
         userInfo.put("initials", activity.getUser().getInitials());
         userInfo.put("avatar", activity.getUser().getAvatar());
         activityMap.put("user", userInfo);
 
-
         if (activity.getProject() != null) {
             activityMap.put("project", activity.getProject().getName());
         }
-
 
         if (activity.getTask() != null) {
             activityMap.put("task", activity.getTask().getTitle());
@@ -234,9 +339,7 @@ public class DashboardController {
         taskMap.put("isOverdue", task.isOverdue());
         taskMap.put("progress", task.getProgress());
 
-
         taskMap.put("project", task.getProject().getName());
-
 
         if (task.getAssignee() != null) {
             Map<String, Object> assigneeInfo = new HashMap<>();

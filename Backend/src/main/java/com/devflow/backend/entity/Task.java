@@ -1,3 +1,4 @@
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -44,21 +45,17 @@ public class Task {
     @Column(nullable = false)
     private Priority priority = Priority.MEDIUM;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
-
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id", nullable = false)
     private User creator;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
     private User assignee;
-
 
     @Column(name = "due_date")
     private LocalDateTime dueDate;
@@ -66,21 +63,17 @@ public class Task {
     @Column(name = "completed_date")
     private LocalDateTime completedDate;
 
-
     @Column(name = "estimated_hours")
     private Integer estimatedHours;
 
     @Column(name = "actual_hours")
     private Integer actualHours;
 
-
     @Column(length = 500)
     private String tags;
 
-
     @Column(name = "story_points")
     private Integer storyPoints;
-
 
     @ManyToMany
     @JoinTable(
@@ -95,7 +88,6 @@ public class Task {
     @Builder.Default
     private List<Task> dependentTasks = new ArrayList<>();
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_task_id")
     private Task parentTask;
@@ -107,7 +99,6 @@ public class Task {
     @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Comment> comments = new ArrayList<>();
-
 
     @Builder.Default
     @Column(nullable = false)
@@ -184,7 +175,7 @@ public class Task {
         }
     }
 
-    // Calculate progress based on subtasks if any
+
     public void updateProgressFromSubtasks() {
         if (subtasks.isEmpty()) {
             return;
@@ -197,7 +188,7 @@ public class Task {
 
         this.progress = (int) Math.round(averageProgress);
 
-        // Auto-complete if all subtasks are done
+
         boolean allSubtasksDone = subtasks.stream()
                 .allMatch(subtask -> subtask.getStatus() == TaskStatus.DONE);
 

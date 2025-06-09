@@ -1,3 +1,4 @@
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -53,16 +54,13 @@ public class Project {
     @Column(name = "completed_date")
     private LocalDateTime completedDate;
 
-
     @Builder.Default
     @Column(length = 7)
     private String color = "#3B82F6"; // Default blue
 
-
     @Builder.Default
     @Column(nullable = false)
     private Integer progress = 0;
-
 
     @Column(precision = 10, scale = 2)
     private java.math.BigDecimal budget;
@@ -70,21 +68,17 @@ public class Project {
     @Column(precision = 10, scale = 2)
     private java.math.BigDecimal spent;
 
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
-
 
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<ProjectMember> members = new ArrayList<>();
 
-
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Task> tasks = new ArrayList<>();
-
 
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -137,7 +131,6 @@ public class Project {
         return tasks.size();
     }
 
-
     public void updateProgress() {
         if (tasks.isEmpty()) {
             this.progress = 0;
@@ -147,7 +140,6 @@ public class Project {
         long completedTasks = getCompletedTasksCount();
         this.progress = (int) ((completedTasks * 100) / tasks.size());
     }
-
 
     public ProjectHealth getHealthStatus() {
         if (status == ProjectStatus.COMPLETED) {

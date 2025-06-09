@@ -120,17 +120,15 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Object[]> countProjectsByStatusForUser(@Param("user") User user);
 
 
-    @Query("""
-        SELECT p FROM Project p 
-        LEFT JOIN p.members pm 
-        WHERE (p.owner = :user OR pm.user = :user) 
-        AND p.isArchived = false 
-        AND p.status = 'ACTIVE'
-        AND p.dueDate IS NOT NULL 
-        AND p.progress < (
-            (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.startDate)) / 
-             EXTRACT(EPOCH FROM (p.dueDate - p.startDate))) * 100
-        )
-    """)
-    List<Project> findProjectsBehindSchedule(@Param("user") User user);
+//    @Query("""
+//    SELECT p FROM Project p
+//    LEFT JOIN p.members pm
+//    WHERE (p.owner = :user OR pm.user = :user)
+//    AND p.isArchived = false
+//    AND p.status = 'ACTIVE'
+//    AND p.dueDate IS NOT NULL
+//    AND p.progress < 50
+//    AND p.dueDate < CURRENT_TIMESTAMP + INTERVAL 7 DAY
+//""")
+//    List<Project> findProjectsBehindSchedule(@Param("user") User user);
 }

@@ -1,13 +1,11 @@
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -67,10 +65,12 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private Role role = Role.MEMBER;
 
+    @Getter
     @Builder.Default
     @Column(nullable = false)
     private Boolean isVerified = false;
 
+    @Getter
     @Builder.Default
     @Column(nullable = false)
     private Boolean isActive = true;
@@ -96,7 +96,7 @@ public class User implements UserDetails {
         updatedAt = LocalDateTime.now();
     }
 
-    // Helper methods for full name and initials
+
     public String getFullName() {
         return firstName + " " + lastName;
     }
@@ -105,7 +105,7 @@ public class User implements UserDetails {
         return (firstName.substring(0, 1) + lastName.substring(0, 1)).toUpperCase();
     }
 
-    // Methods that can be used to check user permissions in projects
+
     public boolean canUserManageProject() {
         return this.role == Role.ADMIN || this.role == Role.MANAGER;
     }
@@ -114,7 +114,7 @@ public class User implements UserDetails {
         return this.role == Role.ADMIN || this.role == Role.MANAGER;
     }
 
-    // UserDetails implementation
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
@@ -148,5 +148,12 @@ public class User implements UserDetails {
     @Override
     public boolean isEnabled() {
         return isVerified && isActive;
+    }
+    public void setIsVerified(Boolean isVerified) {
+        this.isVerified = isVerified;
+    }
+
+    public void setIsActive(Boolean isActive) {
+        this.isActive = isActive;
     }
 }
