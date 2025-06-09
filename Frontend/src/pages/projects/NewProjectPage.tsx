@@ -1,4 +1,3 @@
-// src/pages/projects/NewProjectPage.tsx
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -7,7 +6,6 @@ import {
   FolderPlus,
   Calendar,
   DollarSign,
-  Users,
   Target,
   Palette,
   Save,

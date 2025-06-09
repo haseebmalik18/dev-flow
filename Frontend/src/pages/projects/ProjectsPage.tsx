@@ -16,7 +16,7 @@ export const ProjectsPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const filteredProjects = useMemo(() => {
-    let filtered = tempProjects.filter((project) => {
+    const filtered = tempProjects.filter((project) => {
       const matchesSearch =
         project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         project.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -56,7 +56,7 @@ export const ProjectsPage: React.FC = () => {
 
   const handleArchiveProject = (projectId: string) => {
     toast.success("Project archived successfully");
-    //wip
+    //would use an API call to archive the project
   };
 
   const handleEditProject = (projectId: string) => {

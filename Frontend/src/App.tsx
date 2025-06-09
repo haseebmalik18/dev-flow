@@ -13,6 +13,10 @@ import { VerifyEmailPage } from "./pages/auth/VerifyEmailPage";
 import { ForgotPasswordPage } from "./pages/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
+import { ProjectsPage } from "./pages/projects/ProjectsPage";
+import { NewProjectPage } from "./pages/projects/NewProjectPage";
+import { ProjectDetailPage } from "./pages/projects/ProjectDetailPage";
+import { EditProjectPage } from "./pages/projects/EditProjectPage";
 import { useAuthStore } from "./hooks/useAuthStore";
 
 const queryClient = new QueryClient({
@@ -85,6 +89,7 @@ const router = createBrowserRouter([
         index: true,
         element: <Navigate to="/dashboard" replace />,
       },
+      // Public routes
       {
         path: "login",
         element: <PublicRoute />,
@@ -135,6 +140,7 @@ const router = createBrowserRouter([
           },
         ],
       },
+      // Protected routes
       {
         path: "dashboard",
         element: <ProtectedRoute />,
@@ -142,6 +148,28 @@ const router = createBrowserRouter([
           {
             index: true,
             element: <DashboardPage />,
+          },
+        ],
+      },
+      {
+        path: "projects",
+        element: <ProtectedRoute />,
+        children: [
+          {
+            index: true,
+            element: <ProjectsPage />,
+          },
+          {
+            path: "new",
+            element: <NewProjectPage />,
+          },
+          {
+            path: ":id",
+            element: <ProjectDetailPage />,
+          },
+          {
+            path: ":id/edit",
+            element: <EditProjectPage />,
           },
         ],
       },

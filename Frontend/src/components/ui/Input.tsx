@@ -4,12 +4,21 @@ import { clsx } from "clsx";
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   icon?: React.ReactNode;
+  label?: string;
+  helperText?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, error, icon, ...props }, ref) => {
+  ({ className, error, icon, label, helperText, ...props }, ref) => {
     return (
       <div className="space-y-2 group/input">
+        {label && (
+          <label className="block text-sm font-medium text-gray-700">
+            {label}
+            {props.required && <span className="text-red-500 ml-1">*</span>}
+          </label>
+        )}
+
         <div className="relative">
           {icon && (
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within/input:text-blue-500 transition-all duration-300 z-10 group-focus-within/input:scale-110">
@@ -33,6 +42,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
         </div>
+
+        {helperText && !error && (
+          <p className="text-sm text-gray-500 animate-in slide-in-from-left-1 duration-200">
+            {helperText}
+          </p>
+        )}
+
         {error && (
           <p className="text-sm text-red-600 animate-in slide-in-from-left-1 duration-200 flex items-center gap-1">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
