@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Edit,
@@ -23,7 +24,7 @@ import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Button } from "../../components/ui/Button";
 import { TaskFormModal } from "../../components/projects/TaskFormModal";
 import { CommentSection } from "../../components/tasks/CommentSection";
-import { TimeTrackingSection } from "../../components/tasks/TimeTrackingSection";
+
 import { DependencySection } from "../../components/tasks/DependencySection";
 import { SubtaskSection } from "../../components/tasks/SubtaskSection";
 import {
@@ -36,12 +37,14 @@ import {
   useUnassignTask,
   useArchiveTask,
   useSubtasks,
+  useProjectTasks,
 } from "../../hooks/useTasks";
 import { useProjectMembers } from "../../hooks/useProjects";
 
 export const TaskDetailPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "overview" | "comments" | "subtasks" | "activity"
@@ -57,6 +60,48 @@ export const TaskDetailPage: React.FC = () => {
   const { data: projectMembers } = useProjectMembers(task?.project.id || 0);
 
   const { data: subtasks } = useSubtasks(parseInt(id!));
+
+  const { data: availableTasksData } = useProjectTasks(
+    task?.project.id || 0,
+    0,
+    100,
+    {
+      status: undefined,
+    }
+  );
+
+  const availableTasks = React.useMemo(() => {
+    if (!availableTasksData?.content || !task) return [];
+
+    return availableTasksData.content
+      .filter((availableTask) => {
+        if (availableTask.id === task.id) return false;
+
+        if (
+          availableTask.status === "DONE" ||
+          availableTask.status === "CANCELLED"
+        )
+          return false;
+
+        const existingDependencyIds =
+          task.dependencies?.map((dep) => dep.id) || [];
+        if (existingDependencyIds.includes(availableTask.id)) return false;
+
+        const dependentTaskIds =
+          task.dependentTasks?.map((dep) => dep.id) || [];
+        if (dependentTaskIds.includes(availableTask.id)) return false;
+
+        return true;
+      })
+      .map((availableTask) => ({
+        id: availableTask.id,
+        title: availableTask.title,
+        status: availableTask.status,
+        priority: availableTask.priority,
+        assignee: availableTask.assignee,
+        project: availableTask.project,
+      }));
+  }, [availableTasksData, task]);
 
   const updateTaskMutation = useUpdateTask();
   const deleteTaskMutation = useDeleteTask();
@@ -480,14 +525,14 @@ export const TaskDetailPage: React.FC = () => {
                   <DependencySection
                     task={task}
                     onUpdate={() => {
-                      // Refetch task data
-                    }}
-                  />
+                      queryClient.invalidateQueries({
+                        queryKey: ["task", task.id],
+                      });
 
-                  <TimeTrackingSection
-                    taskId={task.id}
-                    estimatedHours={task.estimatedHours}
-                    actualHours={task.actualHours}
+                      queryClient.invalidateQueries({
+                        queryKey: ["tasks", "project", task.project.id],
+                      });
+                    }}
                   />
                 </div>
               )}
@@ -735,7 +780,7 @@ export const TaskDetailPage: React.FC = () => {
         projectId={task.project.id}
         taskId={task.id}
         projectMembers={projectMembers}
-        availableTasks={[]} // TODO: fetch available tasks for dependencies
+        availableTasks={availableTasks}
       />
     </div>
   );

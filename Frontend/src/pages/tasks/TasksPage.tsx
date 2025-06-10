@@ -18,8 +18,9 @@ import {
   useOverdueTasks,
   useTasksDueSoon,
   useTaskStats,
+  useProjectTasks,
 } from "../../hooks/useTasks";
-import { useProjects } from "../../hooks/useProjects";
+import { useProjects, useProjectMembers } from "../../hooks/useProjects";
 import type { TaskFilterRequest } from "../../services/taskService";
 
 export const TasksPage: React.FC = () => {
@@ -39,6 +40,36 @@ export const TasksPage: React.FC = () => {
 
   const { data: projectsData } = useProjects(0, 50);
   const projects = projectsData?.content || [];
+
+  const { data: projectMembers } = useProjectMembers(
+    selectedProjectForNewTask || 0
+  );
+
+  const { data: availableTasksData } = useProjectTasks(
+    selectedProjectForNewTask || 0,
+    0,
+    100,
+    {
+      status: undefined,
+    }
+  );
+
+  const availableTasks = useMemo(() => {
+    if (!availableTasksData?.content || !selectedProjectForNewTask) return [];
+
+    return availableTasksData.content
+      .filter((task) => {
+        return task.status !== "DONE" && task.status !== "CANCELLED";
+      })
+      .map((task) => ({
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        assignee: task.assignee,
+        project: task.project,
+      }));
+  }, [availableTasksData, selectedProjectForNewTask]);
 
   const filters: TaskFilterRequest = useMemo(() => {
     const baseFilters: TaskFilterRequest = {};
@@ -136,8 +167,20 @@ export const TasksPage: React.FC = () => {
   const totalTasks = currentTaskData?.totalElements || 0;
 
   const handleAddTask = (projectId?: number) => {
-    setSelectedProjectForNewTask(projectId);
+    const targetProjectId = projectId || projects[0]?.id;
+
+    if (!targetProjectId) {
+      alert("Please create a project first before adding tasks.");
+      return;
+    }
+
+    setSelectedProjectForNewTask(targetProjectId);
     setIsTaskModalOpen(true);
+  };
+
+  const handleCloseTaskModal = () => {
+    setIsTaskModalOpen(false);
+    setSelectedProjectForNewTask(undefined);
   };
 
   const getViewTitle = () => {
@@ -448,7 +491,7 @@ export const TasksPage: React.FC = () => {
                   {tasks.map((task) => (
                     <Link
                       key={task.id}
-                      to={`/projects/${task.project.id}`}
+                      to={`/tasks/${task.id}`}
                       className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                     >
                       <div className="w-1 h-12 bg-blue-500 rounded-full"></div>
@@ -594,13 +637,10 @@ export const TasksPage: React.FC = () => {
 
       <TaskFormModal
         isOpen={isTaskModalOpen}
-        onClose={() => {
-          setIsTaskModalOpen(false);
-          setSelectedProjectForNewTask(undefined);
-        }}
+        onClose={handleCloseTaskModal}
         projectId={selectedProjectForNewTask || projects[0]?.id || 1}
-        projectMembers={[]} // need to fetch this based on selected project
-        availableTasks={[]} // need to fetch this based on selected project
+        projectMembers={projectMembers || []}
+        availableTasks={availableTasks}
       />
     </div>
   );

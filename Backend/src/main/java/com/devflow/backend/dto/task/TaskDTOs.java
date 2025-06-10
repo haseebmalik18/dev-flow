@@ -29,7 +29,6 @@ public class TaskDTOs {
         private Priority priority;
         private Long assigneeId;
         private LocalDateTime dueDate;
-        private Integer estimatedHours;
         private Integer storyPoints;
         private String tags;
         private Long parentTaskId;
@@ -51,8 +50,6 @@ public class TaskDTOs {
         private Priority priority;
         private Long assigneeId;
         private LocalDateTime dueDate;
-        private Integer estimatedHours;
-        private Integer actualHours;
         private Integer storyPoints;
         private String tags;
         private Integer progress;
@@ -71,8 +68,6 @@ public class TaskDTOs {
         private Priority priority;
         private LocalDateTime dueDate;
         private LocalDateTime completedDate;
-        private Integer estimatedHours;
-        private Integer actualHours;
         private String tags;
         private Integer storyPoints;
         private Integer progress;
@@ -160,8 +155,6 @@ public class TaskDTOs {
         private Long overdueTasks;
         private Long blockedTasks;
         private Double averageProgress;
-        private Integer totalEstimatedHours;
-        private Integer totalActualHours;
     }
 
     @Data
@@ -191,16 +184,6 @@ public class TaskDTOs {
         private Priority priority;
         private Long assigneeId;
         private String tags;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class TaskTimeTrackingRequest {
-        private Integer hours;
-        private String description;
-        private LocalDateTime date;
     }
 
     @Data

@@ -229,18 +229,6 @@ public class TaskController {
         return ResponseEntity.ok(ApiResponse.success("Dependency removed successfully", task));
     }
 
-    @PostMapping("/{id}/time")
-    public ResponseEntity<ApiResponse<TaskResponse>> trackTime(
-            @PathVariable Long id,
-            @Valid @RequestBody TaskTimeTrackingRequest request,
-            Authentication authentication) {
-
-        User user = (User) authentication.getPrincipal();
-        TaskResponse task = taskService.trackTime(id, request, user);
-
-        return ResponseEntity.ok(ApiResponse.success("Time tracked successfully", task));
-    }
-
     @PostMapping("/bulk-update")
     public ResponseEntity<ApiResponse<List<TaskSummary>>> bulkUpdateTasks(
             @Valid @RequestBody BulkTaskUpdateRequest request,

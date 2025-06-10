@@ -1,4 +1,3 @@
-
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -63,12 +62,6 @@ public class Task {
     @Column(name = "completed_date")
     private LocalDateTime completedDate;
 
-    @Column(name = "estimated_hours")
-    private Integer estimatedHours;
-
-    @Column(name = "actual_hours")
-    private Integer actualHours;
-
     @Column(length = 500)
     private String tags;
 
@@ -116,7 +109,7 @@ public class Task {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-
+    // Helper methods
     public void addSubtask(Task subtask) {
         subtasks.add(subtask);
         subtask.setParentTask(this);
@@ -175,7 +168,6 @@ public class Task {
         }
     }
 
-
     public void updateProgressFromSubtasks() {
         if (subtasks.isEmpty()) {
             return;
@@ -187,7 +179,6 @@ public class Task {
                 .orElse(0.0);
 
         this.progress = (int) Math.round(averageProgress);
-
 
         boolean allSubtasksDone = subtasks.stream()
                 .allMatch(subtask -> subtask.getStatus() == TaskStatus.DONE);

@@ -3,7 +3,6 @@ import { useForm } from "react-hook-form";
 import {
   X,
   Calendar,
-  Clock,
   Tag,
   Link as LinkIcon,
   Save,
@@ -46,7 +45,6 @@ interface TaskFormData {
   priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   assigneeId?: number;
   dueDate?: string;
-  estimatedHours?: number;
   storyPoints?: number;
   tags: string;
   dependencyIds: number[];
@@ -98,7 +96,6 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
           priority: existingTask.priority,
           assigneeId: existingTask.assignee?.id,
           dueDate: existingTask.dueDate?.split("T")[0] || "",
-          estimatedHours: existingTask.estimatedHours || undefined,
           storyPoints: existingTask.storyPoints || undefined,
           tags: existingTask.tagList?.join(", ") || "",
           dependencyIds: existingTask.dependencies?.map((d) => d.id) || [],
@@ -114,7 +111,6 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
           priority: "MEDIUM",
           assigneeId: undefined,
           dueDate: "",
-          estimatedHours: undefined,
           storyPoints: undefined,
           tags: "",
           dependencyIds: [],
@@ -147,7 +143,6 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         priority: data.priority,
         assigneeId: data.assigneeId || undefined,
         dueDate: formatDateForBackend(data.dueDate),
-        estimatedHours: data.estimatedHours || undefined,
         storyPoints: data.storyPoints || undefined,
         tags: tagInput.trim() || undefined,
         parentTaskId: parentTaskId || undefined,
@@ -328,24 +323,12 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Input
                   {...register("dueDate")}
                   type="date"
                   label="Due Date"
                   icon={<Calendar className="w-5 h-5" />}
-                />
-
-                <Input
-                  {...register("estimatedHours", {
-                    min: { value: 0, message: "Hours must be positive" },
-                    valueAsNumber: true,
-                  })}
-                  type="number"
-                  label="Estimated Hours"
-                  placeholder="0"
-                  icon={<Clock className="w-5 h-5" />}
-                  error={errors.estimatedHours?.message}
                 />
 
                 <Input

@@ -36,8 +36,6 @@ export interface TaskResponse {
   priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   dueDate: string | null;
   completedDate: string | null;
-  estimatedHours: number | null;
-  actualHours: number | null;
   tags: string | null;
   storyPoints: number | null;
   progress: number;
@@ -81,7 +79,6 @@ export interface CreateTaskRequest {
   priority?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   assigneeId?: number;
   dueDate?: string;
-  estimatedHours?: number;
   storyPoints?: number;
   tags?: string;
   parentTaskId?: number;
@@ -95,8 +92,6 @@ export interface UpdateTaskRequest {
   priority?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   assigneeId?: number;
   dueDate?: string;
-  estimatedHours?: number;
-  actualHours?: number;
   storyPoints?: number;
   tags?: string;
   progress?: number;
@@ -124,12 +119,6 @@ export interface BulkTaskUpdateRequest {
   tags?: string;
 }
 
-export interface TaskTimeTrackingRequest {
-  hours: number;
-  description?: string;
-  date?: string;
-}
-
 export interface TaskStatsResponse {
   totalTasks: number;
   todoTasks: number;
@@ -139,8 +128,6 @@ export interface TaskStatsResponse {
   overdueTasks: number;
   blockedTasks: number;
   averageProgress: number;
-  totalEstimatedHours: number;
-  totalActualHours: number;
 }
 
 export const taskService = {
@@ -297,14 +284,6 @@ export const taskService = {
     const response = await api.delete(
       `/tasks/${id}/dependencies/${dependencyId}`
     );
-    return response.data;
-  },
-
-  trackTime: async (
-    id: number,
-    data: TaskTimeTrackingRequest
-  ): Promise<ApiResponse<TaskResponse>> => {
-    const response = await api.post(`/tasks/${id}/time`, data);
     return response.data;
   },
 

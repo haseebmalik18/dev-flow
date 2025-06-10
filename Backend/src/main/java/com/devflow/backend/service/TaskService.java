@@ -44,7 +44,6 @@ public class TaskService {
                 .project(project)
                 .creator(creator)
                 .dueDate(request.getDueDate())
-                .estimatedHours(request.getEstimatedHours())
                 .storyPoints(request.getStoryPoints())
                 .tags(request.getTags())
                 .status(TaskStatus.TODO)
@@ -121,12 +120,6 @@ public class TaskService {
         }
         if (request.getDueDate() != null) {
             task.setDueDate(request.getDueDate());
-        }
-        if (request.getEstimatedHours() != null) {
-            task.setEstimatedHours(request.getEstimatedHours());
-        }
-        if (request.getActualHours() != null) {
-            task.setActualHours(request.getActualHours());
         }
         if (request.getStoryPoints() != null) {
             task.setStoryPoints(request.getStoryPoints());
@@ -354,23 +347,6 @@ public class TaskService {
         return mapToTaskResponse(task);
     }
 
-    public TaskResponse trackTime(Long taskId, TaskTimeTrackingRequest request, User user) {
-        Task task = findTaskWithAccess(taskId, user);
-
-        if (!task.getAssignee().equals(user) && !canUserEditTasks(user, task.getProject())) {
-            throw new AuthException("You don't have permission to track time on this task");
-        }
-
-        int currentHours = task.getActualHours() != null ? task.getActualHours() : 0;
-        task.setActualHours(currentHours + request.getHours());
-        task = taskRepository.save(task);
-
-        log.info("Time tracked: {} hours on task {} by user: {}",
-                request.getHours(), task.getTitle(), user.getUsername());
-
-        return mapToTaskResponse(task);
-    }
-
     public List<TaskSummary> bulkUpdateTasks(BulkTaskUpdateRequest request, User user) {
         List<Task> tasks = taskRepository.findAllById(request.getTaskIds());
 
@@ -450,16 +426,6 @@ public class TaskService {
                 .average()
                 .orElse(0.0);
 
-        int totalEstimatedHours = tasks.stream()
-                .filter(t -> t.getEstimatedHours() != null)
-                .mapToInt(Task::getEstimatedHours)
-                .sum();
-
-        int totalActualHours = tasks.stream()
-                .filter(t -> t.getActualHours() != null)
-                .mapToInt(Task::getActualHours)
-                .sum();
-
         return TaskStatsResponse.builder()
                 .totalTasks(totalTasks)
                 .todoTasks(todoTasks)
@@ -469,8 +435,6 @@ public class TaskService {
                 .overdueTasks(overdueTasks)
                 .blockedTasks(blockedTasks)
                 .averageProgress(averageProgress)
-                .totalEstimatedHours(totalEstimatedHours)
-                .totalActualHours(totalActualHours)
                 .build();
     }
 
@@ -552,7 +516,6 @@ public class TaskService {
                 .priority(request.getPriority())
                 .assigneeId(request.getAssigneeId())
                 .dueDate(request.getDueDate())
-                .estimatedHours(request.getEstimatedHours())
                 .storyPoints(request.getStoryPoints())
                 .tags(request.getTags())
                 .parentTaskId(parentTaskId)
@@ -592,6 +555,7 @@ public class TaskService {
         return mapToTaskResponse(task);
     }
 
+    // Helper methods
     private Project findProjectWithAccess(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new AuthException("Project not found"));
@@ -779,8 +743,6 @@ public class TaskService {
                 .priority(task.getPriority())
                 .dueDate(task.getDueDate())
                 .completedDate(task.getCompletedDate())
-                .estimatedHours(task.getEstimatedHours())
-                .actualHours(task.getActualHours())
                 .tags(task.getTags())
                 .storyPoints(task.getStoryPoints())
                 .progress(task.getProgress())

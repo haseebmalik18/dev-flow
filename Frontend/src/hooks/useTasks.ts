@@ -5,7 +5,6 @@ import type {
   UpdateTaskRequest,
   TaskFilterRequest,
   BulkTaskUpdateRequest,
-  TaskTimeTrackingRequest,
 } from "../services/taskService";
 import toast from "react-hot-toast";
 
@@ -302,26 +301,6 @@ export const useRemoveDependency = () => {
     onError: (error: any) => {
       const message =
         error.response?.data?.message || "Failed to remove dependency";
-      toast.error(message);
-    },
-  });
-};
-
-export const useTrackTime = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: TaskTimeTrackingRequest }) =>
-      taskService.trackTime(id, data),
-    onSuccess: (response, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["task", variables.id] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["task-stats"] });
-
-      toast.success(response.message || "Time tracked successfully!");
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.message || "Failed to track time";
       toast.error(message);
     },
   });

@@ -11,7 +11,6 @@ import {
   Trash2,
   Play,
   Pause,
-  Timer,
   Archive,
   GitMerge,
   Loader2,
@@ -29,7 +28,6 @@ import {
   useArchiveTask,
   useRestoreTask,
   useBulkUpdateTasks,
-  useTrackTime,
 } from "../../hooks/useTasks";
 import type {
   TaskSummary,
@@ -88,17 +86,9 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
     if (assigneeFilter !== "all") {
       if (assigneeFilter === "unassigned") {
-        // Handle unassigned tasks - might need special handling in the backend
+        // Handle unassigned tasks
       } else {
         baseFilters.assigneeId = parseInt(assigneeFilter);
-      }
-    }
-
-    if (!showCompleted) {
-      // Exclude completed tasks if not showing them
-      if (!baseFilters.status) {
-        // Only apply this filter if no specific status is selected
-        baseFilters.status = undefined; // Let backend handle this
       }
     }
 
@@ -127,7 +117,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   const archiveTaskMutation = useArchiveTask();
   const restoreTaskMutation = useRestoreTask();
   const bulkUpdateMutation = useBulkUpdateTasks();
-  const trackTimeMutation = useTrackTime();
 
   const tasks = tasksData?.content || [];
   const totalTasks = tasksData?.totalElements || 0;
@@ -248,8 +237,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
   const TaskCard: React.FC<{ task: TaskSummary }> = ({ task }) => {
     const [showMenu, setShowMenu] = useState(false);
-    const [showTimeTracker, setShowTimeTracker] = useState(false);
-    const [timeHours, setTimeHours] = useState("");
 
     const handleStatusChange = async (newStatus: string) => {
       try {
@@ -285,22 +272,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
         setShowMenu(false);
       } catch (error) {
         // Error handled by mutation hooks
-      }
-    };
-
-    const handleTrackTime = async () => {
-      const hours = parseInt(timeHours);
-      if (isNaN(hours) || hours <= 0) return;
-
-      try {
-        await trackTimeMutation.mutateAsync({
-          id: task.id,
-          data: { hours, date: new Date().toISOString() },
-        });
-        setTimeHours("");
-        setShowTimeTracker(false);
-      } catch (error) {
-        // Error handled by mutation hook
       }
     };
 
@@ -423,14 +394,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
                 <div className="border-t border-gray-100 my-1" />
 
                 <button
-                  onClick={() => setShowTimeTracker(!showTimeTracker)}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <Timer className="w-4 h-4" />
-                  <span>Track Time</span>
-                </button>
-
-                <button
                   onClick={() => archiveTaskMutation.mutate(task.id)}
                   className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
@@ -449,35 +412,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
             )}
           </div>
         </div>
-
-        {showTimeTracker && (
-          <div className="mb-3 p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-center space-x-2">
-              <input
-                type="number"
-                placeholder="Hours"
-                value={timeHours}
-                onChange={(e) => setTimeHours(e.target.value)}
-                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                min="1"
-              />
-              <Button
-                size="sm"
-                onClick={handleTrackTime}
-                disabled={!timeHours || trackTimeMutation.isPending}
-              >
-                {trackTimeMutation.isPending ? "..." : "Track"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowTimeTracker(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
 
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
