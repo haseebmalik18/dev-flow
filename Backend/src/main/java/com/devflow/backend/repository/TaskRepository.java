@@ -15,7 +15,6 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificationExecutor<Task> {
@@ -54,7 +53,7 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
         ORDER BY t.dueDate ASC
     """)
     List<Task> findTasksDueSoon(@Param("now") LocalDateTime now, @Param("deadline") LocalDateTime deadline);
-    
+
     @Query("""
         SELECT t FROM Task t 
         JOIN t.project p 

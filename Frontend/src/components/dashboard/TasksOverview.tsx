@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  CheckSquare,
-  AlertTriangle,
-  MoreHorizontal,
-  Loader2,
-} from "lucide-react";
+import { CheckSquare, AlertTriangle, MoreHorizontal } from "lucide-react";
 import { useTasksOverview } from "../../hooks/useDashboard";
 
 interface TaskItemProps {

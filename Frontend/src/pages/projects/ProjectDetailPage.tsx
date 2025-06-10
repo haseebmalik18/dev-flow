@@ -21,12 +21,15 @@ import {
 } from "lucide-react";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Button } from "../../components/ui/Button";
+import { EnhancedTaskManagement } from "../../components/projects/TaskManagement";
+import { TaskFormModal } from "../../components/projects/TaskFormModal";
 import {
   useProject,
   useProjectMembers,
   useProjectHealth,
   useArchiveProject,
 } from "../../hooks/useProjects";
+import { useProjectTasks, useTaskStats } from "../../hooks/useTasks";
 
 export const ProjectDetailPage: React.FC = () => {
   const { id } = useParams();
@@ -34,6 +37,8 @@ export const ProjectDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     "overview" | "tasks" | "team" | "activity"
   >("overview");
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<number | undefined>();
 
   const {
     data: project,
@@ -47,7 +52,21 @@ export const ProjectDetailPage: React.FC = () => {
     id!
   );
 
+  const { data: taskStats, isLoading: isLoadingTaskStats } = useTaskStats(
+    parseInt(id!)
+  );
+
   const archiveProjectMutation = useArchiveProject();
+
+  const { data: availableTasksData } = useProjectTasks(parseInt(id!), 0, 100, {
+    status: undefined,
+  });
+
+  const availableTasks =
+    availableTasksData?.content?.map((task) => ({
+      id: task.id,
+      title: task.title,
+    })) || [];
 
   if (isLoadingProject) {
     return (
@@ -144,6 +163,16 @@ export const ProjectDetailPage: React.FC = () => {
 
   const getPriorityText = (priority: string) => {
     return priority.charAt(0) + priority.slice(1).toLowerCase() + " Priority";
+  };
+
+  const handleAddTask = () => {
+    setEditingTaskId(undefined);
+    setIsTaskModalOpen(true);
+  };
+
+  const handleEditTask = (taskId: number) => {
+    setEditingTaskId(taskId);
+    setIsTaskModalOpen(true);
   };
 
   const TeamMember: React.FC<{ member: any }> = ({ member }) => (
@@ -266,7 +295,11 @@ export const ProjectDetailPage: React.FC = () => {
                 <div className="ml-4">
                   <div className="text-sm font-medium text-gray-600">Tasks</div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {project.completedTasks}/{project.totalTasks}
+                    {isLoadingTaskStats
+                      ? "..."
+                      : `${taskStats?.completedTasks || 0}/${
+                          taskStats?.totalTasks || 0
+                        }`}
                   </div>
                 </div>
               </div>
@@ -407,6 +440,42 @@ export const ProjectDetailPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {taskStats && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        Task Overview
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center p-3 bg-gray-50 rounded-lg">
+                          <div className="text-2xl font-bold text-gray-900">
+                            {taskStats.totalTasks}
+                          </div>
+                          <div className="text-sm text-gray-600">Total</div>
+                        </div>
+                        <div className="text-center p-3 bg-blue-50 rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {taskStats.inProgressTasks}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            In Progress
+                          </div>
+                        </div>
+                        <div className="text-center p-3 bg-green-50 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">
+                            {taskStats.completedTasks}
+                          </div>
+                          <div className="text-sm text-gray-600">Completed</div>
+                        </div>
+                        <div className="text-center p-3 bg-red-50 rounded-lg">
+                          <div className="text-2xl font-bold text-red-600">
+                            {taskStats.overdueTasks}
+                          </div>
+                          <div className="text-sm text-gray-600">Overdue</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {healthData && (
                     <div className="bg-white rounded-xl border border-gray-200 p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -516,6 +585,7 @@ export const ProjectDetailPage: React.FC = () => {
                         variant="outline"
                         className="w-full justify-start"
                         icon={<Plus className="w-4 h-4" />}
+                        onClick={handleAddTask}
                       >
                         Add New Task
                       </Button>
@@ -547,22 +617,12 @@ export const ProjectDetailPage: React.FC = () => {
             )}
 
             {activeTab === "tasks" && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Project Tasks
-                  </h3>
-                  <Button icon={<Plus className="w-4 h-4" />}>Add Task</Button>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                  <div className="text-center py-8">
-                    <CheckSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">
-                      Task management will be implemented in the next phase
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <EnhancedTaskManagement
+                projectId={parseInt(id!)}
+                projectMembers={members}
+                onAddTask={handleAddTask}
+                onEditTask={handleEditTask}
+              />
             )}
 
             {activeTab === "team" && (
@@ -620,6 +680,18 @@ export const ProjectDetailPage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      <TaskFormModal
+        isOpen={isTaskModalOpen}
+        onClose={() => {
+          setIsTaskModalOpen(false);
+          setEditingTaskId(undefined);
+        }}
+        projectId={parseInt(id!)}
+        taskId={editingTaskId}
+        projectMembers={members}
+        availableTasks={availableTasks}
+      />
     </div>
   );
 };
