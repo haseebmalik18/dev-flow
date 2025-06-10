@@ -127,6 +127,18 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
 
   const watchPriority = watch("priority");
 
+  const formatDateForBackend = (
+    dateString: string | undefined
+  ): string | undefined => {
+    if (!dateString) return undefined;
+
+    if (dateString.includes("T")) {
+      return dateString;
+    }
+
+    return `${dateString}T23:59:59`;
+  };
+
   const onSubmit = async (data: TaskFormData) => {
     try {
       const taskData = {
@@ -134,7 +146,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
         description: data.description || undefined,
         priority: data.priority,
         assigneeId: data.assigneeId || undefined,
-        dueDate: data.dueDate || undefined,
+        dueDate: formatDateForBackend(data.dueDate),
         estimatedHours: data.estimatedHours || undefined,
         storyPoints: data.storyPoints || undefined,
         tags: tagInput.trim() || undefined,
@@ -161,7 +173,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
     }
   };
 
-  const handleTagKeyPress = (e: React.KeyboardEvent) => {
+  const handleTagKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       const newTag = e.currentTarget.value.trim();

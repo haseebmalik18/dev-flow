@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   MoreHorizontal,
@@ -9,11 +9,18 @@ import {
   CheckCircle,
   Clock,
   AlertTriangle,
+  Eye,
+  Edit,
+  Archive,
+  Star,
+  Share2,
 } from "lucide-react";
 import { useProjectsOverview } from "../../hooks/useDashboard";
 import type { ProjectSummary } from "../../services/dashboardService";
 
 const ProjectCard: React.FC<{ project: ProjectSummary }> = ({ project }) => {
+  const [showMenu, setShowMenu] = useState(false);
+
   const getStatusIcon = () => {
     switch (project.healthStatus) {
       case "COMPLETED":
@@ -72,26 +79,135 @@ const ProjectCard: React.FC<{ project: ProjectSummary }> = ({ project }) => {
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showMenu) {
+        setShowMenu(false);
+      }
+    };
+
+    if (showMenu) {
+      document.addEventListener("click", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, [showMenu]);
+
+  const handleMenuClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowMenu(!showMenu);
+  };
+
+  const handleMenuItemClick = (e: React.MouseEvent, action: () => void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowMenu(false);
+    action();
+  };
+
+  const handleStar = () => {
+    console.log("Star project:", project.name);
+    // TODO: Implement star functionality
+  };
+
+  const handleShare = () => {
+    console.log("Share project:", project.name);
+    // TODO: Implement share functionality
+  };
+
+  const handleArchive = () => {
+    if (window.confirm(`Are you sure you want to archive "${project.name}"?`)) {
+      console.log("Archive project:", project.name);
+      // TODO: Implement archive functionality
+    }
+  };
+
   return (
     <div
-      className={`bg-white rounded-xl border-l-4 ${getPriorityColor()} border-r border-t border-b border-gray-200 p-6 hover:shadow-md transition-shadow`}
+      className={`bg-white rounded-xl border-l-4 ${getPriorityColor()} border-r border-t border-b border-gray-200 p-6 hover:shadow-md transition-shadow group relative`}
     >
       <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 flex-1">
           <div
             className={`w-3 h-3 rounded-full`}
             style={{ backgroundColor: project.color }}
           ></div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{project.name}</h3>
-            <p className="text-sm text-gray-600 line-clamp-2">
+          <div className="flex-1 min-w-0">
+            <Link
+              to={`/projects/${project.id}`}
+              className="block hover:text-blue-600 transition-colors"
+            >
+              <h3 className="font-semibold text-gray-900 truncate">
+                {project.name}
+              </h3>
+            </Link>
+            <p className="text-sm text-gray-600 line-clamp-2 mt-1">
               {project.description}
             </p>
           </div>
         </div>
-        <button className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
-          <MoreHorizontal className="w-5 h-5 text-gray-400" />
-        </button>
+
+        <div className="relative ml-3">
+          <button
+            onClick={handleMenuClick}
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <MoreHorizontal className="w-5 h-5 text-gray-400" />
+          </button>
+
+          {showMenu && (
+            <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 min-w-[160px]">
+              <Link
+                to={`/projects/${project.id}`}
+                className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowMenu(false)}
+              >
+                <Eye className="w-4 h-4" />
+                <span>View Details</span>
+              </Link>
+
+              <Link
+                to={`/projects/${project.id}/edit`}
+                className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowMenu(false)}
+              >
+                <Edit className="w-4 h-4" />
+                <span>Edit Project</span>
+              </Link>
+
+              <div className="border-t border-gray-100 my-1" />
+
+              <button
+                onClick={(e) => handleMenuItemClick(e, handleStar)}
+                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Star className="w-4 h-4" />
+                <span>Add to Favorites</span>
+              </button>
+
+              <button
+                onClick={(e) => handleMenuItemClick(e, handleShare)}
+                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share Project</span>
+              </button>
+
+              <div className="border-t border-gray-100 my-1" />
+
+              <button
+                onClick={(e) => handleMenuItemClick(e, handleArchive)}
+                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                <Archive className="w-4 h-4" />
+                <span>Archive</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mb-4">

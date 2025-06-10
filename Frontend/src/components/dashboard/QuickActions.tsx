@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, Users, Calendar, BarChart3, Zap } from "lucide-react";
+import { Plus, Users, BarChart3, Zap, Folder } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface QuickActionProps {
@@ -43,31 +43,31 @@ export const QuickActions: React.FC = () => {
 
   const actions = [
     {
-      icon: <Plus className="w-6 h-6 text-blue-600" />,
+      icon: <Folder className="w-6 h-6 text-blue-600" />,
       title: "New Project",
       description: "Create a new project workspace",
       onClick: () => navigate("/projects/new"),
       color: "bg-blue-100",
     },
     {
-      icon: <Calendar className="w-6 h-6 text-green-600" />,
+      icon: <Plus className="w-6 h-6 text-green-600" />,
       title: "Add Task",
       description: "Create a new task or milestone",
-      onClick: () => console.log("Add task"),
+      onClick: () => navigate("/tasks"),
       color: "bg-green-100",
     },
     {
       icon: <Users className="w-6 h-6 text-purple-600" />,
       title: "Invite Team",
       description: "Add new members to projects",
-      onClick: () => console.log("Invite team"),
+      onClick: () => navigate("/projects"),
       color: "bg-purple-100",
     },
     {
       icon: <BarChart3 className="w-6 h-6 text-orange-600" />,
       title: "View Reports",
       description: "Analyze project performance",
-      onClick: () => console.log("View reports"),
+      onClick: () => navigate("/projects"),
       color: "bg-orange-100",
     },
   ];

@@ -88,7 +88,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
     if (assigneeFilter !== "all") {
       if (assigneeFilter === "unassigned") {
-        // Handle unassigned tasks - this might need special handling in the backend
+        // Handle unassigned tasks - might need special handling in the backend
       } else {
         baseFilters.assigneeId = parseInt(assigneeFilter);
       }

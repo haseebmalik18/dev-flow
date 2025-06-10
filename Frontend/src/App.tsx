@@ -1,186 +1,167 @@
 import React from "react";
 import {
-  createBrowserRouter,
-  RouterProvider,
+  BrowserRouter as Router,
+  Routes,
+  Route,
   Navigate,
-  Outlet,
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
+
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { VerifyEmailPage } from "./pages/auth/VerifyEmailPage";
 import { ForgotPasswordPage } from "./pages/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
+
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { ProjectsPage } from "./pages/projects/ProjectsPage";
 import { NewProjectPage } from "./pages/projects/NewProjectPage";
 import { ProjectDetailPage } from "./pages/projects/ProjectDetailPage";
 import { EditProjectPage } from "./pages/projects/EditProjectPage";
+import { TasksPage } from "./pages/tasks/TasksPage";
+import { TaskDetailPage } from "./pages/tasks/TaskDetailPage";
+
 import { useAuthStore } from "./hooks/useAuthStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
+      staleTime: 60 * 1000, // 1 minute
       retry: 1,
     },
   },
 });
 
-const ProtectedRoute: React.FC = () => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <Outlet />;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
-const PublicRoute: React.FC = () => {
+const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <Outlet />;
-};
-
-const RootLayout: React.FC = () => {
-  return (
-    <>
-      <Outlet />
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: "#fff",
-            color: "#374151",
-            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
-            border: "1px solid #e5e7eb",
-          },
-          success: {
-            iconTheme: {
-              primary: "#10b981",
-              secondary: "#fff",
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: "#ef4444",
-              secondary: "#fff",
-            },
-          },
-        }}
-      />
-    </>
+  return !isAuthenticated ? (
+    <>{children}</>
+  ) : (
+    <Navigate to="/dashboard" replace />
   );
 };
-
-const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <RootLayout />,
-    children: [
-      {
-        index: true,
-        element: <Navigate to="/dashboard" replace />,
-      },
-      // Public routes
-      {
-        path: "login",
-        element: <PublicRoute />,
-        children: [
-          {
-            index: true,
-            element: <LoginPage />,
-          },
-        ],
-      },
-      {
-        path: "register",
-        element: <PublicRoute />,
-        children: [
-          {
-            index: true,
-            element: <RegisterPage />,
-          },
-        ],
-      },
-      {
-        path: "verify-email",
-        element: <PublicRoute />,
-        children: [
-          {
-            index: true,
-            element: <VerifyEmailPage />,
-          },
-        ],
-      },
-      {
-        path: "forgot-password",
-        element: <PublicRoute />,
-        children: [
-          {
-            index: true,
-            element: <ForgotPasswordPage />,
-          },
-        ],
-      },
-      {
-        path: "reset-password",
-        element: <PublicRoute />,
-        children: [
-          {
-            index: true,
-            element: <ResetPasswordPage />,
-          },
-        ],
-      },
-      // Protected routes
-      {
-        path: "dashboard",
-        element: <ProtectedRoute />,
-        children: [
-          {
-            index: true,
-            element: <DashboardPage />,
-          },
-        ],
-      },
-      {
-        path: "projects",
-        element: <ProtectedRoute />,
-        children: [
-          {
-            index: true,
-            element: <ProjectsPage />,
-          },
-          {
-            path: "new",
-            element: <NewProjectPage />,
-          },
-          {
-            path: ":id",
-            element: <ProjectDetailPage />,
-          },
-          {
-            path: ":id/edit",
-            element: <EditProjectPage />,
-          },
-        ],
-      },
-    ],
-  },
-]);
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <Router>
+        <div className="App">
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <LoginPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicRoute>
+                  <RegisterPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/verify-email"
+              element={
+                <PublicRoute>
+                  <VerifyEmailPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicRoute>
+                  <ForgotPasswordPage />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/reset-password"
+              element={
+                <PublicRoute>
+                  <ResetPasswordPage />
+                </PublicRoute>
+              }
+            />
+
+            {/* Protected Routes */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects"
+              element={
+                <ProtectedRoute>
+                  <ProjectsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/new"
+              element={
+                <ProtectedRoute>
+                  <NewProjectPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:id"
+              element={
+                <ProtectedRoute>
+                  <ProjectDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:id/edit"
+              element={
+                <ProtectedRoute>
+                  <EditProjectPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tasks"
+              element={
+                <ProtectedRoute>
+                  <TasksPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tasks/:id"
+              element={
+                <ProtectedRoute>
+                  <TaskDetailPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Catch all route */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+          <Toaster position="top-right" />
+        </div>
+      </Router>
     </QueryClientProvider>
   );
 }

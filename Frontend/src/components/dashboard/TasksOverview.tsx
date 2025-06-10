@@ -1,5 +1,11 @@
 import React from "react";
-import { CheckSquare, AlertTriangle, MoreHorizontal } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  CheckSquare,
+  AlertTriangle,
+  MoreHorizontal,
+  Calendar,
+} from "lucide-react";
 import { useTasksOverview } from "../../hooks/useDashboard";
 
 interface TaskItemProps {
@@ -126,6 +132,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
             {task.isOverdue && (
               <AlertTriangle className="w-4 h-4 text-red-500" />
             )}
+            <Calendar className="w-4 h-4 text-gray-400" />
             <span
               className={`text-xs ${
                 task.isOverdue ? "text-red-600" : "text-gray-500"
@@ -203,9 +210,12 @@ export const TasksOverview: React.FC = () => {
           <CheckSquare className="w-5 h-5 text-green-600" />
           <h2 className="text-lg font-semibold text-gray-900">Recent Tasks</h2>
         </div>
-        <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+        <Link
+          to="/tasks"
+          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+        >
           View All Tasks
-        </button>
+        </Link>
       </div>
 
       {isLoading ? (
