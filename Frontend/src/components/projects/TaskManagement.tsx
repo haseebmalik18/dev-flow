@@ -34,6 +34,7 @@ import type {
   TaskFilterRequest,
   UpdateTaskRequest,
 } from "../../services/taskService";
+import { Link } from "react-router-dom";
 
 interface EnhancedTaskManagementProps {
   projectId: number;
@@ -237,6 +238,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
   const TaskCard: React.FC<{ task: TaskSummary }> = ({ task }) => {
     const [showMenu, setShowMenu] = useState(false);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const handleStatusChange = async (newStatus: string) => {
       try {
@@ -287,216 +289,254 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     };
 
     return (
-      <div
-        className={`bg-white rounded-lg border-l-4 ${getPriorityColor(
-          task.priority
-        )} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-all duration-200`}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-start space-x-3 flex-1">
-            <input
-              type="checkbox"
-              checked={selectedTasks.includes(task.id)}
-              onChange={(e) => handleTaskSelect(task.id, e.target.checked)}
-              className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <div className="flex-1 min-w-0">
-              <h4 className="font-medium text-gray-900 truncate">
-                {task.title}
-              </h4>
-              <p className="text-sm text-gray-600 line-clamp-2 mt-1">
-                {task.description}
-              </p>
+      <div className="relative">
+        <Link
+          to={`/tasks/${task.id}`}
+          className={`block bg-white rounded-lg border-l-4 ${getPriorityColor(
+            task.priority
+          )} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-all duration-200`}
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start space-x-3 flex-1">
+              <input
+                type="checkbox"
+                checked={selectedTasks.includes(task.id)}
+                onChange={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleTaskSelect(task.id, e.target.checked);
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <div className="flex-1 min-w-0">
+                <h4 className="font-medium text-gray-900 truncate">
+                  {task.title}
+                </h4>
+                <p className="text-sm text-gray-600 line-clamp-2 mt-1">
+                  {task.description}
+                </p>
+              </div>
+            </div>
+
+            <div className="relative ml-3">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowMenu(!showMenu);
+                }}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <MoreHorizontal className="w-4 h-4 text-gray-400" />
+              </button>
+
+              {showMenu && (
+                <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[180px]">
+                  <button
+                    onClick={() => onEditTask?.(task.id)}
+                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Edit className="w-4 h-4" />
+                    <span>Edit Task</span>
+                  </button>
+
+                  <div className="border-t border-gray-100 my-1" />
+
+                  <div className="px-3 py-1">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      Status
+                    </span>
+                  </div>
+                  {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => (
+                    <button
+                      key={status}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleStatusChange(status);
+                      }}
+                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
+                        task.status === status
+                          ? "bg-blue-50 text-blue-700"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      {getStatusIcon(status)}
+                      <span>{status.replace("_", " ")}</span>
+                    </button>
+                  ))}
+
+                  <div className="border-t border-gray-100 my-1" />
+
+                  <div className="px-3 py-1">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      Assignee
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleAssigneeChange(null);
+                    }}
+                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>Unassigned</span>
+                  </button>
+                  {projectMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleAssigneeChange(member.user.id);
+                      }}
+                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
+                        task.assignee?.id === member.user.id
+                          ? "bg-blue-50 text-blue-700"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      {member.user.avatar ? (
+                        <img
+                          src={member.user.avatar}
+                          alt={`${member.user.firstName} ${member.user.lastName}`}
+                          className="w-4 h-4 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center text-xs">
+                          {member.user.firstName[0]}
+                        </div>
+                      )}
+                      <span>
+                        {member.user.firstName} {member.user.lastName}
+                      </span>
+                    </button>
+                  ))}
+
+                  <div className="border-t border-gray-100 my-1" />
+
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      archiveTaskMutation.mutate(task.id);
+                    }}
+                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Archive className="w-4 h-4" />
+                    <span>Archive</span>
+                  </button>
+
+                  <button
+                    onClick={handleDelete}
+                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="relative ml-3">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
-            >
-              <MoreHorizontal className="w-4 h-4 text-gray-400" />
-            </button>
-
-            {showMenu && (
-              <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[180px]">
-                <button
-                  onClick={() => onEditTask?.(task.id)}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <Edit className="w-4 h-4" />
-                  <span>Edit Task</span>
-                </button>
-
-                <div className="border-t border-gray-100 my-1" />
-
-                <div className="px-3 py-1">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Status
-                  </span>
-                </div>
-                {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => handleStatusChange(status)}
-                    className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
-                      task.status === status
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-gray-700"
-                    }`}
-                  >
-                    {getStatusIcon(status)}
-                    <span>{status.replace("_", " ")}</span>
-                  </button>
-                ))}
-
-                <div className="border-t border-gray-100 my-1" />
-
-                <div className="px-3 py-1">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Assignee
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleAssigneeChange(null)}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <X className="w-4 h-4" />
-                  <span>Unassigned</span>
-                </button>
-                {projectMembers.map((member) => (
-                  <button
-                    key={member.id}
-                    onClick={() => handleAssigneeChange(member.user.id)}
-                    className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
-                      task.assignee?.id === member.user.id
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-gray-700"
-                    }`}
-                  >
-                    {member.user.avatar ? (
-                      <img
-                        src={member.user.avatar}
-                        alt={`${member.user.firstName} ${member.user.lastName}`}
-                        className="w-4 h-4 rounded-full"
-                      />
-                    ) : (
-                      <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center text-xs">
-                        {member.user.firstName[0]}
-                      </div>
-                    )}
-                    <span>
-                      {member.user.firstName} {member.user.lastName}
-                    </span>
-                  </button>
-                ))}
-
-                <div className="border-t border-gray-100 my-1" />
-
-                <button
-                  onClick={() => archiveTaskMutation.mutate(task.id)}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <Archive className="w-4 h-4" />
-                  <span>Archive</span>
-                </button>
-
-                <button
-                  onClick={handleDelete}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-gray-700">Progress</span>
-            <span className="text-xs text-gray-600">{task.progress}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-1.5">
-            <div
-              className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-              style={{ width: `${task.progress}%` }}
-            ></div>
-          </div>
-        </div>
-
-        {task.tagList && task.tagList.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-3">
-            {task.tagList.map((tag, index) => (
-              <span
-                key={index}
-                className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
-              >
-                {tag}
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-gray-700">
+                Progress
               </span>
-            ))}
+              <span className="text-xs text-gray-600">{task.progress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div
+                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${task.progress}%` }}
+              ></div>
+            </div>
           </div>
-        )}
 
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-1">
-              {getStatusIcon(task.status)}
+          {task.tagList && task.tagList.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3">
+              {task.tagList.map((tag, index) => (
+                <span
+                  key={index}
+                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1">
+                {getStatusIcon(task.status)}
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                    task.status
+                  )}`}
+                >
+                  {task.status.replace("_", " ").toUpperCase()}
+                </span>
+              </div>
+
               <span
-                className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                  task.status
+                className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadgeColor(
+                  task.priority
                 )}`}
               >
-                {task.status.replace("_", " ").toUpperCase()}
+                {task.priority}
               </span>
             </div>
 
-            <span
-              className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadgeColor(
-                task.priority
-              )}`}
-            >
-              {task.priority}
-            </span>
-          </div>
+            <div className="flex items-center space-x-3">
+              {task.assignee && (
+                <div className="flex items-center space-x-1">
+                  {task.assignee.avatar ? (
+                    <img
+                      src={task.assignee.avatar}
+                      alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
+                      className="w-6 h-6 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                      {task.assignee.firstName[0]}
+                      {task.assignee.lastName[0]}
+                    </div>
+                  )}
+                </div>
+              )}
 
-          <div className="flex items-center space-x-3">
-            {task.assignee && (
               <div className="flex items-center space-x-1">
-                {task.assignee.avatar ? (
-                  <img
-                    src={task.assignee.avatar}
-                    alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
-                    className="w-6 h-6 rounded-full"
-                  />
-                ) : (
-                  <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
-                    {task.assignee.firstName[0]}
-                    {task.assignee.lastName[0]}
+                {task.isOverdue && (
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                )}
+                {task.isBlocked && (
+                  <div className="group relative">
+                    <GitMerge className="w-5 h-5 text-orange-500" />
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                      This task has dependencies
+                    </div>
                   </div>
                 )}
+                <Calendar className="w-4 h-4 text-gray-400" />
+                <span
+                  className={`text-xs ${
+                    task.isOverdue ? "text-red-600" : "text-gray-500"
+                  }`}
+                >
+                  {formatDate(task.dueDate)}
+                </span>
               </div>
-            )}
-
-            <div className="flex items-center space-x-1">
-              {task.isOverdue && (
-                <AlertTriangle className="w-4 h-4 text-red-500" />
-              )}
-              {task.isBlocked && (
-                <GitMerge className="w-4 h-4 text-orange-500" />
-              )}
-              <Calendar className="w-4 h-4 text-gray-400" />
-              <span
-                className={`text-xs ${
-                  task.isOverdue ? "text-red-600" : "text-gray-500"
-                }`}
-              >
-                {formatDate(task.dueDate)}
-              </span>
             </div>
           </div>
-        </div>
+        </Link>
       </div>
     );
   };
@@ -573,7 +613,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
           <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode("list")}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors cursor-pointer ${
                 viewMode === "list"
                   ? "bg-white text-gray-900 shadow-sm"
                   : "text-gray-600"
@@ -583,7 +623,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
             </button>
             <button
               onClick={() => setViewMode("board")}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors cursor-pointer ${
                 viewMode === "board"
                   ? "bg-white text-gray-900 shadow-sm"
                   : "text-gray-600"
@@ -593,7 +633,11 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
             </button>
           </div>
 
-          <Button onClick={onAddTask} icon={<Plus className="w-4 h-4" />}>
+          <Button
+            onClick={onAddTask}
+            icon={<Plus className="w-4 h-4" />}
+            className="cursor-pointer"
+          >
             Add Task
           </Button>
         </div>
@@ -747,7 +791,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
         </div>
       ) : (
         /* Kanban Board View */
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => {
             const statusTasks = tasks.filter((t) => t.status === status);
             const statusLabels = {
@@ -757,34 +801,48 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
               DONE: "Completed",
             };
             const statusColors = {
-              TODO: "bg-gray-50",
-              IN_PROGRESS: "bg-blue-50",
-              REVIEW: "bg-yellow-50",
-              DONE: "bg-green-50",
+              TODO: "border-gray-200 bg-white",
+              IN_PROGRESS: "border-blue-200 bg-white",
+              REVIEW: "border-yellow-200 bg-white",
+              DONE: "border-green-200 bg-white",
+            };
+            const statusHeaderColors = {
+              TODO: "bg-gray-50 border-gray-200",
+              IN_PROGRESS: "bg-blue-50 border-blue-200",
+              REVIEW: "bg-yellow-50 border-yellow-200",
+              DONE: "bg-green-50 border-green-200",
             };
 
             return (
               <div
                 key={status}
-                className={`${
+                className={`border rounded-lg ${
                   statusColors[status as keyof typeof statusColors]
-                } rounded-lg p-4 min-h-[500px]`}
+                } shadow-sm`}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-medium text-gray-900">
-                    {statusLabels[status as keyof typeof statusLabels]}
-                  </h4>
-                  <span className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded-full">
-                    {statusTasks.length}
-                  </span>
+                <div
+                  className={`px-4 py-3 border-b ${
+                    statusHeaderColors[
+                      status as keyof typeof statusHeaderColors
+                    ]
+                  } rounded-t-lg`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-gray-900">
+                      {statusLabels[status as keyof typeof statusLabels]}
+                    </h4>
+                    <span className="bg-white text-gray-700 text-xs px-2 py-1 rounded-full shadow-sm">
+                      {statusTasks.length}
+                    </span>
+                  </div>
                 </div>
-                <div className="space-y-3">
+                <div className="p-3 space-y-3 min-h-[500px]">
                   {statusTasks.map((task) => (
                     <TaskCard key={task.id} task={task} />
                   ))}
                   {statusTasks.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
-                      <div className="w-16 h-16 bg-gray-200 rounded-lg mx-auto mb-2 flex items-center justify-center">
+                      <div className="w-12 h-12 bg-gray-50 rounded-lg mx-auto mb-2 flex items-center justify-center">
                         {getStatusIcon(status)}
                       </div>
                       <p className="text-sm">

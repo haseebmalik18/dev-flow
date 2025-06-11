@@ -1,4 +1,3 @@
-// src/services/projectService.ts
 import api from "../config/api";
 import type { ApiResponse } from "../types/auth";
 
@@ -126,7 +125,6 @@ export interface ProjectHealthResponse {
 }
 
 export const projectService = {
-  // Get user's projects with pagination and search
   getUserProjects: async (
     page = 0,
     size = 10,
@@ -149,13 +147,11 @@ export const projectService = {
     return response.data;
   },
 
-  // Get a specific project by ID
   getProject: async (id: number): Promise<ApiResponse<Project>> => {
     const response = await api.get(`/projects/${id}`);
     return response.data;
   },
 
-  // Create a new project
   createProject: async (
     data: CreateProjectRequest
   ): Promise<ApiResponse<Project>> => {
@@ -163,7 +159,6 @@ export const projectService = {
     return response.data;
   },
 
-  // Update an existing project
   updateProject: async (
     id: number,
     data: UpdateProjectRequest
@@ -172,13 +167,11 @@ export const projectService = {
     return response.data;
   },
 
-  // Archive a project
   archiveProject: async (id: number): Promise<ApiResponse<void>> => {
     const response = await api.delete(`/projects/${id}`);
     return response.data;
   },
 
-  // Get project members
   getProjectMembers: async (
     id: number
   ): Promise<ApiResponse<ProjectMember[]>> => {
@@ -186,7 +179,6 @@ export const projectService = {
     return response.data;
   },
 
-  // Add a member to a project
   addMember: async (
     id: number,
     data: AddMemberRequest
@@ -195,7 +187,6 @@ export const projectService = {
     return response.data;
   },
 
-  // Remove a member from a project
   removeMember: async (
     id: number,
     memberId: number
@@ -204,13 +195,11 @@ export const projectService = {
     return response.data;
   },
 
-  // Get user project statistics
   getUserProjectStats: async (): Promise<ApiResponse<ProjectStatsResponse>> => {
     const response = await api.get("/projects/stats");
     return response.data;
   },
 
-  // Get project health information
   getProjectHealth: async (
     id: number
   ): Promise<ApiResponse<ProjectHealthResponse>> => {

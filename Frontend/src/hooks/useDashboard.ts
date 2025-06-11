@@ -1,4 +1,3 @@
-// src/hooks/useDashboard.ts
 import { useQuery } from "@tanstack/react-query";
 import { dashboardService } from "../services/dashboardService";
 
@@ -7,7 +6,7 @@ export const useDashboardStats = () => {
     queryKey: ["dashboard", "stats"],
     queryFn: () => dashboardService.getStats(),
     select: (data) => data.data,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -16,7 +15,7 @@ export const useRecentActivity = () => {
     queryKey: ["dashboard", "activity"],
     queryFn: () => dashboardService.getRecentActivity(),
     select: (data) => data.data,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -25,7 +24,7 @@ export const useProjectsOverview = () => {
     queryKey: ["dashboard", "projects"],
     queryFn: () => dashboardService.getProjectsOverview(),
     select: (data) => data.data,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -34,7 +33,7 @@ export const useTasksOverview = () => {
     queryKey: ["dashboard", "tasks"],
     queryFn: () => dashboardService.getTasksOverview(),
     select: (data) => data.data,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -43,6 +42,6 @@ export const useUserProfile = () => {
     queryKey: ["user", "profile"],
     queryFn: () => dashboardService.getUserProfile(),
     select: (data) => data.data,
-    staleTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 10 * 60 * 1000,
   });
 };

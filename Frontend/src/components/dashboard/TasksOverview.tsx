@@ -83,13 +83,22 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
   };
 
   return (
-    <div className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+    <Link
+      to={`/tasks/${task.id}`}
+      className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+    >
       <div className={`w-1 h-12 rounded-full ${getPriorityColor()}`}></div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
           <h4 className="font-medium text-gray-900 truncate">{task.title}</h4>
-          <button className="p-1 hover:bg-gray-200 rounded transition-colors">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            className="p-1 hover:bg-gray-200 rounded transition-colors"
+          >
             <MoreHorizontal className="w-4 h-4 text-gray-400" />
           </button>
         </div>
@@ -143,7 +152,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task }) => {
           </div>
         </div>
       </div>
-    </div>
+    </Link>
   );
 };
 

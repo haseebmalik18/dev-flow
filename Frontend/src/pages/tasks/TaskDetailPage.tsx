@@ -16,7 +16,6 @@ import {
   GitMerge,
   Archive,
   MoreHorizontal,
-  Timer,
   Hash,
   Loader2,
 } from "lucide-react";
@@ -484,7 +483,7 @@ export const TaskDetailPage: React.FC = () => {
                   icon: CheckCircle,
                   count: subtasks?.length,
                 },
-                { id: "activity", label: "Activity", icon: Timer },
+                { id: "activity", label: "Activity", icon: Clock },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -553,7 +552,7 @@ export const TaskDetailPage: React.FC = () => {
                     Activity Feed
                   </h3>
                   <div className="text-center py-8">
-                    <Timer className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">
                       Activity tracking will be implemented in the next phase
                     </p>
@@ -635,34 +634,6 @@ export const TaskDetailPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
-                  {task.estimatedHours && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">
-                        Estimated Hours
-                      </label>
-                      <div className="mt-1 flex items-center space-x-1">
-                        <Clock className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-900">
-                          {task.estimatedHours}h
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {task.actualHours && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-600">
-                        Actual Hours
-                      </label>
-                      <div className="mt-1 flex items-center space-x-1">
-                        <Timer className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-900">
-                          {task.actualHours}h
-                        </span>
-                      </div>
-                    </div>
-                  )}
 
                   {task.storyPoints && (
                     <div>

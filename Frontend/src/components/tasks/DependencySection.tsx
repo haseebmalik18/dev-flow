@@ -12,28 +12,13 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useAddDependency, useRemoveDependency } from "../../hooks/useTasks";
+import { taskService } from "../../services/taskService";
+import { useQuery } from "@tanstack/react-query";
 import type { TaskResponse } from "../../services/taskService";
 
 interface DependencySectionProps {
   task: TaskResponse;
   onUpdate: () => void;
-}
-
-interface DependencyTask {
-  id: number;
-  title: string;
-  status: string;
-  priority: string;
-  project: {
-    id: number;
-    name: string;
-    color: string;
-  };
-  assignee?: {
-    firstName: string;
-    lastName: string;
-    avatar: string | null;
-  };
 }
 
 export const DependencySection: React.FC<DependencySectionProps> = ({
@@ -47,56 +32,57 @@ export const DependencySection: React.FC<DependencySectionProps> = ({
   const addDependencyMutation = useAddDependency();
   const removeDependencyMutation = useRemoveDependency();
 
-  // Mock available tasks - this would come from an API search
-  const availableTasks: DependencyTask[] = [
-    {
-      id: 101,
-      title: "Setup authentication system",
-      status: "DONE",
-      priority: "HIGH",
-      project: {
-        id: 1,
-        name: "E-commerce Platform",
-        color: "#3B82F6",
-      },
-      assignee: {
-        firstName: "John",
-        lastName: "Doe",
-        avatar: null,
-      },
-    },
-    {
-      id: 102,
-      title: "Create user database schema",
-      status: "IN_PROGRESS",
-      priority: "MEDIUM",
-      project: {
-        id: 1,
-        name: "E-commerce Platform",
-        color: "#3B82F6",
-      },
-      assignee: {
-        firstName: "Jane",
-        lastName: "Smith",
-        avatar: null,
-      },
-    },
-    {
-      id: 103,
-      title: "Design API endpoints",
-      status: "TODO",
-      priority: "HIGH",
-      project: {
-        id: 2,
-        name: "API Gateway",
-        color: "#10B981",
-      },
-    },
-  ].filter(
-    (t) =>
-      t.id !== task.id &&
-      t.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const { data: searchResults } = useQuery({
+    queryKey: ["tasks", "search", searchTerm, task.project.id],
+    queryFn: () => taskService.searchTasks(searchTerm, 0, 20, task.project.id),
+    select: (data) => data.data,
+    enabled: !!searchTerm.trim() && searchTerm.length >= 2,
+    staleTime: 30 * 1000,
+  });
+
+  const availableTasks = React.useMemo(() => {
+    if (!searchResults?.content || !searchTerm.trim()) return [];
+
+    const existingDependencyIds = task.dependencies?.map((dep) => dep.id) || [];
+    const dependentTaskIds = task.dependentTasks?.map((dep) => dep.id) || [];
+
+    return searchResults.content
+      .filter((availableTask) => {
+        if (availableTask.id === task.id) return false;
+
+        if (existingDependencyIds.includes(availableTask.id)) return false;
+
+        if (dependentTaskIds.includes(availableTask.id)) return false;
+
+        if (
+          availableTask.status === "DONE" ||
+          availableTask.status === "CANCELLED"
+        )
+          return false;
+
+        return true;
+      })
+      .map((availableTask) => ({
+        id: availableTask.id,
+        title: availableTask.title,
+        status: availableTask.status,
+        priority: availableTask.priority,
+        project: availableTask.project,
+        assignee: availableTask.assignee
+          ? {
+              firstName: availableTask.assignee.firstName,
+              lastName: availableTask.assignee.lastName,
+              avatar: availableTask.assignee.avatar,
+            }
+          : undefined,
+      }));
+  }, [
+    searchResults,
+    searchTerm,
+    task.id,
+    task.dependencies,
+    task.dependentTasks,
+  ]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -166,7 +152,8 @@ export const DependencySection: React.FC<DependencySectionProps> = ({
     }
   };
 
-  const isBlocked = task.dependencies.some((dep) => dep.status !== "DONE");
+  const isBlocked =
+    task.dependencies?.some((dep) => dep.status !== "DONE") || false;
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -270,7 +257,9 @@ export const DependencySection: React.FC<DependencySectionProps> = ({
                   ))
                 ) : (
                   <div className="text-center py-4 text-gray-500">
-                    No tasks found matching "{searchTerm}"
+                    {searchTerm.length < 2
+                      ? "Type at least 2 characters to search for tasks"
+                      : `No available tasks found matching "${searchTerm}"`}
                   </div>
                 )}
               </div>
@@ -304,9 +293,9 @@ export const DependencySection: React.FC<DependencySectionProps> = ({
       <div className="space-y-4">
         <div>
           <h4 className="font-medium text-gray-900 mb-3">
-            Blocked by ({task.dependencies.length})
+            Blocked by ({task.dependencies?.length || 0})
           </h4>
-          {task.dependencies.length > 0 ? (
+          {task.dependencies && task.dependencies.length > 0 ? (
             <div className="space-y-3">
               {task.dependencies.map((dependency) => (
                 <div
@@ -358,7 +347,7 @@ export const DependencySection: React.FC<DependencySectionProps> = ({
           )}
         </div>
 
-        {task.dependentTasks.length > 0 && (
+        {task.dependentTasks && task.dependentTasks.length > 0 && (
           <div>
             <h4 className="font-medium text-gray-900 mb-3">
               Blocking ({task.dependentTasks.length})
@@ -393,18 +382,27 @@ export const DependencySection: React.FC<DependencySectionProps> = ({
           </div>
         )}
 
-        {(task.dependencies.length > 0 || task.dependentTasks.length > 0) && (
+        {((task.dependencies && task.dependencies.length > 0) ||
+          (task.dependentTasks && task.dependentTasks.length > 0)) && (
           <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
             <div className="flex items-start space-x-2">
               <GitMerge className="w-4 h-4 text-blue-600 mt-0.5" />
               <div className="text-sm text-blue-800">
                 <p className="font-medium mb-1">Dependency Chain</p>
                 <p>
-                  This task {task.dependencies.length > 0 && "depends on"}
-                  {task.dependencies.length > 0 &&
+                  This task{" "}
+                  {task.dependencies &&
+                    task.dependencies.length > 0 &&
+                    "depends on"}
+                  {task.dependencies &&
+                    task.dependencies.length > 0 &&
+                    task.dependentTasks &&
                     task.dependentTasks.length > 0 &&
                     " and "}
-                  {task.dependentTasks.length > 0 && "blocks"} other tasks.
+                  {task.dependentTasks &&
+                    task.dependentTasks.length > 0 &&
+                    "blocks"}{" "}
+                  other tasks.
                   {isBlocked &&
                     " Complete the dependencies above to unblock this task."}
                 </p>

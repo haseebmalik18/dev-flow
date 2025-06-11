@@ -1,4 +1,3 @@
-// src/services/dashboardService.ts
 import api from "../config/api";
 import type { ApiResponse } from "../types/auth";
 
