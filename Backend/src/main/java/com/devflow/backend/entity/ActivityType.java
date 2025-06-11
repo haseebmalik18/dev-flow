@@ -1,3 +1,5 @@
+// Add these to your ActivityType enum:
+
 package com.devflow.backend.entity;
 
 public enum ActivityType {
@@ -8,6 +10,10 @@ public enum ActivityType {
     MEMBER_ADDED,
     MEMBER_REMOVED,
     MEMBER_ROLE_CHANGED,
+    MEMBER_INVITED,
+    INVITATION_ACCEPTED,
+    INVITATION_DECLINED,
+    INVITATION_CANCELLED,
     TASK_CREATED,
     TASK_UPDATED,
     TASK_COMPLETED,

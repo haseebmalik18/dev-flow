@@ -38,8 +38,19 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
+                        // Public authentication endpoints
                         .requestMatchers("/api/v1/auth/**").permitAll()
+
+                        // Public health check
                         .requestMatchers("/api/v1/health").permitAll()
+
+                        // Public invitation endpoints (for email links)
+                        .requestMatchers("/api/v1/invitations/*").permitAll() // Get invitation by token (public for email links)
+
+                        // Public user validation endpoints
+                        .requestMatchers("/api/v1/users/check-email").permitAll()
+
+                        // All other endpoints require authentication
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

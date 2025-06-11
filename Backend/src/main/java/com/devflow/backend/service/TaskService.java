@@ -555,7 +555,7 @@ public class TaskService {
         return mapToTaskResponse(task);
     }
 
-    // Helper methods
+
     private Project findProjectWithAccess(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new AuthException("Project not found"));
