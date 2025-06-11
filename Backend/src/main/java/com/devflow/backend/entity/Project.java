@@ -1,4 +1,3 @@
-
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -56,7 +55,7 @@ public class Project {
 
     @Builder.Default
     @Column(length = 7)
-    private String color = "#3B82F6"; // Default blue
+    private String color = "#3B82F6";
 
     @Builder.Default
     @Column(nullable = false)

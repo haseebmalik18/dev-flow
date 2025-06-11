@@ -34,7 +34,6 @@ public class DashboardController {
 
         User user = (User) authentication.getPrincipal();
 
-
         Page<Project> userProjectsPage = projectRepository
                 .findProjectsByUserMembership(user, Pageable.unpaged());
         List<Project> userProjects = userProjectsPage.getContent();
@@ -42,7 +41,6 @@ public class DashboardController {
         Page<Task> userTasksPage = taskRepository
                 .findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
         List<Task> userTasks = userTasksPage.getContent();
-
 
         long activeProjects = userProjects.stream()
                 .filter(p -> p.getStatus() == ProjectStatus.ACTIVE)
@@ -56,18 +54,14 @@ public class DashboardController {
                 .filter(Task::isOverdue)
                 .count();
 
-        String hoursTracked = calculateHoursTracked(userTasks);
-
         long teamMembers = userProjects.stream()
                 .mapToLong(Project::getTeamSize)
                 .sum();
-
 
         LocalDateTime lastMonth = LocalDateTime.now().minus(1, ChronoUnit.MONTHS);
 
         double activeProjectsChange = calculateActiveProjectsChange(user, lastMonth);
         double completedTasksChange = calculateCompletedTasksChange(user, lastMonth);
-        double hoursTrackedChange = calculateHoursTrackedChange(user, lastMonth);
         double teamMembersChange = calculateTeamMembersChange(user, lastMonth);
 
         Map<String, Object> stats = new HashMap<>();
@@ -75,8 +69,6 @@ public class DashboardController {
         stats.put("activeProjectsChange", activeProjectsChange);
         stats.put("completedTasks", completedTasks);
         stats.put("completedTasksChange", completedTasksChange);
-        stats.put("hoursTracked", hoursTracked);
-        stats.put("hoursTrackedChange", hoursTrackedChange);
         stats.put("teamMembers", teamMembers);
         stats.put("teamMembersChange", teamMembersChange);
         stats.put("overdueTasks", overdueTasks);
@@ -172,24 +164,12 @@ public class DashboardController {
         return ResponseEntity.ok(ApiResponse.success("User profile retrieved successfully", profile));
     }
 
-
-
-    private String calculateHoursTracked(List<Task> tasks) {
-        int totalHours = tasks.stream()
-                .filter(t -> t.getActualHours() != null)
-                .mapToInt(Task::getActualHours)
-                .sum();
-        return totalHours + "h";
-    }
-
     private double calculateActiveProjectsChange(User user, LocalDateTime lastMonth) {
         try {
-
             Page<Project> currentProjects = projectRepository.findProjectsByUserMembership(user, Pageable.unpaged());
             long currentActiveCount = currentProjects.getContent().stream()
                     .filter(p -> p.getStatus() == ProjectStatus.ACTIVE)
                     .count();
-
 
             long lastMonthActiveCount = currentProjects.getContent().stream()
                     .filter(p -> p.getCreatedAt().isBefore(lastMonth))
@@ -208,13 +188,11 @@ public class DashboardController {
 
     private double calculateCompletedTasksChange(User user, LocalDateTime lastMonth) {
         try {
-
             Page<Task> currentTasks = taskRepository.findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
             long currentCompletedCount = currentTasks.getContent().stream()
                     .filter(t -> t.getStatus() == TaskStatus.DONE)
                     .filter(t -> t.getCompletedDate() != null && t.getCompletedDate().isAfter(lastMonth))
                     .count();
-
 
             LocalDateTime twoMonthsAgo = lastMonth.minus(1, ChronoUnit.MONTHS);
             long lastMonthCompletedCount = currentTasks.getContent().stream()
@@ -233,44 +211,13 @@ public class DashboardController {
         }
     }
 
-    private double calculateHoursTrackedChange(User user, LocalDateTime lastMonth) {
-        try {
-            Page<Task> currentTasks = taskRepository.findByAssigneeAndIsArchivedFalseOrderByDueDateAsc(user, Pageable.unpaged());
-
-
-            int currentMonthHours = currentTasks.getContent().stream()
-                    .filter(t -> t.getActualHours() != null)
-                    .filter(t -> t.getUpdatedAt().isAfter(lastMonth))
-                    .mapToInt(Task::getActualHours)
-                    .sum();
-
-
-            LocalDateTime twoMonthsAgo = lastMonth.minus(1, ChronoUnit.MONTHS);
-            int lastMonthHours = currentTasks.getContent().stream()
-                    .filter(t -> t.getActualHours() != null)
-                    .filter(t -> t.getUpdatedAt().isAfter(twoMonthsAgo) && t.getUpdatedAt().isBefore(lastMonth))
-                    .mapToInt(Task::getActualHours)
-                    .sum();
-
-            if (lastMonthHours == 0) {
-                return currentMonthHours > 0 ? 100.0 : 0.0;
-            }
-
-            return ((double) (currentMonthHours - lastMonthHours) / lastMonthHours) * 100;
-        } catch (Exception e) {
-            return 0.0;
-        }
-    }
-
     private double calculateTeamMembersChange(User user, LocalDateTime lastMonth) {
         try {
             Page<Project> currentProjects = projectRepository.findProjectsByUserMembership(user, Pageable.unpaged());
 
-
             long currentTeamMembers = currentProjects.getContent().stream()
                     .mapToLong(Project::getTeamSize)
                     .sum();
-
 
             long lastMonthTeamMembers = currentProjects.getContent().stream()
                     .filter(p -> p.getCreatedAt().isBefore(lastMonth))

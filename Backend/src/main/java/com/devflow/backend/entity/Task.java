@@ -109,7 +109,6 @@ public class Task {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    // Helper methods
     public void addSubtask(Task subtask) {
         subtasks.add(subtask);
         subtask.setParentTask(this);
