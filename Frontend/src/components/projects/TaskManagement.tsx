@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -32,9 +32,29 @@ import {
 import type {
   TaskSummary,
   TaskFilterRequest,
-  UpdateTaskRequest,
 } from "../../services/taskService";
 import { Link } from "react-router-dom";
+import {
+  DndContext,
+  DragOverlay,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  useDroppable,
+} from "@dnd-kit/core";
+import type {
+  DragStartEvent,
+  DragEndEvent,
+  DragOverEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { createPortal } from "react-dom";
+import { CSS } from "@dnd-kit/utilities";
+import { toast } from "react-hot-toast";
 
 interface EnhancedTaskManagementProps {
   projectId: number;
@@ -67,6 +87,17 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
+  const [showMenu, setShowMenu] = useState(false);
+  const [activeTask, setActiveTask] = useState<TaskSummary | null>(null);
+  const [localTasks, setLocalTasks] = useState<TaskSummary[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   const filters: TaskFilterRequest = useMemo(() => {
     const baseFilters: TaskFilterRequest = {
@@ -121,6 +152,10 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
   const tasks = tasksData?.content || [];
   const totalTasks = tasksData?.totalElements || 0;
+
+  useEffect(() => {
+    setLocalTasks(tasks);
+  }, [tasks]);
 
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
@@ -236,9 +271,71 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     }
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const task = tasks.find((t) => t.id === active.id);
+    if (task) {
+      setActiveTask(task);
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTask(null);
+
+    if (!over) return;
+
+    const taskId = active.id;
+    const newStatus = over.id as "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
+
+    const prevTasks = [...localTasks];
+    const taskIdx = localTasks.findIndex((t) => t.id === taskId);
+    if (taskIdx === -1) return;
+    const prevStatus = localTasks[taskIdx].status;
+
+    const updatedTasks = localTasks.map((t) =>
+      t.id === taskId ? { ...t, status: newStatus } : t
+    );
+    setLocalTasks(updatedTasks);
+
+    try {
+      await updateTaskMutation.mutateAsync({
+        id: taskId as number,
+        data: { status: newStatus },
+      });
+    } catch (error) {
+      // Revert on error
+      setLocalTasks(prevTasks);
+      toast.error("Failed to update task status. Please try again.");
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    // Optional: Add visual feedback during drag
+  };
+
   const TaskCard: React.FC<{ task: TaskSummary }> = ({ task }) => {
     const [showMenu, setShowMenu] = useState(false);
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({
+      id: task.id,
+      data: {
+        type: "Task",
+        task,
+      },
+    });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+    };
 
     const handleStatusChange = async (newStatus: string) => {
       try {
@@ -289,7 +386,13 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     };
 
     return (
-      <div className="relative">
+      <div
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        className="relative"
+      >
         <Link
           to={`/tasks/${task.id}`}
           className={`block bg-white rounded-lg border-l-4 ${getPriorityColor(
@@ -550,6 +653,70 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     )
   );
 
+  const StatusColumn: React.FC<{
+    status: string;
+    tasks: TaskSummary[];
+    statusLabels: Record<string, string>;
+    statusColors: Record<string, string>;
+    statusHeaderColors: Record<string, string>;
+  }> = ({ status, tasks, statusLabels, statusColors, statusHeaderColors }) => {
+    const { setNodeRef } = useDroppable({
+      id: status,
+    });
+
+    return (
+      <div
+        key={status}
+        className={`border rounded-lg ${
+          statusColors[status as keyof typeof statusColors]
+        } shadow-sm`}
+      >
+        <div
+          className={`px-4 py-3 border-b ${
+            statusHeaderColors[status as keyof typeof statusHeaderColors]
+          } rounded-t-lg`}
+        >
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-gray-900">
+              {statusLabels[status as keyof typeof statusLabels]}
+            </h4>
+            <span className="bg-white text-gray-700 text-xs px-2 py-1 rounded-full shadow-sm">
+              {tasks.length}
+            </span>
+          </div>
+        </div>
+        <SortableContext
+          items={tasks.map((task) => task.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div
+            ref={setNodeRef}
+            className="p-3 space-y-3 min-h-[500px]"
+            data-status={status}
+          >
+            {tasks.map((task) => (
+              <TaskCard key={task.id} task={task} />
+            ))}
+            {tasks.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <div className="w-12 h-12 bg-gray-50 rounded-lg mx-auto mb-2 flex items-center justify-center">
+                  {getStatusIcon(status)}
+                </div>
+                <p className="text-sm">
+                  No{" "}
+                  {statusLabels[
+                    status as keyof typeof statusLabels
+                  ].toLowerCase()}{" "}
+                  tasks
+                </p>
+              </div>
+            )}
+          </div>
+        </SortableContext>
+      </div>
+    );
+  };
+
   if (isLoadingTasks) {
     return (
       <div className="space-y-6">
@@ -790,75 +957,55 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
           )}
         </div>
       ) : (
-        /* Kanban Board View */
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => {
-            const statusTasks = tasks.filter((t) => t.status === status);
-            const statusLabels = {
-              TODO: "To Do",
-              IN_PROGRESS: "In Progress",
-              REVIEW: "Review",
-              DONE: "Completed",
-            };
-            const statusColors = {
-              TODO: "border-gray-200 bg-white",
-              IN_PROGRESS: "border-blue-200 bg-white",
-              REVIEW: "border-yellow-200 bg-white",
-              DONE: "border-green-200 bg-white",
-            };
-            const statusHeaderColors = {
-              TODO: "bg-gray-50 border-gray-200",
-              IN_PROGRESS: "bg-blue-50 border-blue-200",
-              REVIEW: "bg-yellow-50 border-yellow-200",
-              DONE: "bg-green-50 border-green-200",
-            };
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragOver={handleDragOver}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => {
+              const statusTasks = localTasks.filter((t) => t.status === status);
+              const statusLabels = {
+                TODO: "To Do",
+                IN_PROGRESS: "In Progress",
+                REVIEW: "Review",
+                DONE: "Completed",
+              };
+              const statusColors = {
+                TODO: "border-gray-200 bg-white",
+                IN_PROGRESS: "border-blue-200 bg-white",
+                REVIEW: "border-yellow-200 bg-white",
+                DONE: "border-green-200 bg-white",
+              };
+              const statusHeaderColors = {
+                TODO: "bg-gray-50 border-gray-200",
+                IN_PROGRESS: "bg-blue-50 border-blue-200",
+                REVIEW: "bg-yellow-50 border-yellow-200",
+                DONE: "bg-green-50 border-green-200",
+              };
 
-            return (
-              <div
-                key={status}
-                className={`border rounded-lg ${
-                  statusColors[status as keyof typeof statusColors]
-                } shadow-sm`}
-              >
-                <div
-                  className={`px-4 py-3 border-b ${
-                    statusHeaderColors[
-                      status as keyof typeof statusHeaderColors
-                    ]
-                  } rounded-t-lg`}
-                >
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-gray-900">
-                      {statusLabels[status as keyof typeof statusLabels]}
-                    </h4>
-                    <span className="bg-white text-gray-700 text-xs px-2 py-1 rounded-full shadow-sm">
-                      {statusTasks.length}
-                    </span>
-                  </div>
-                </div>
-                <div className="p-3 space-y-3 min-h-[500px]">
-                  {statusTasks.map((task) => (
-                    <TaskCard key={task.id} task={task} />
-                  ))}
-                  {statusTasks.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      <div className="w-12 h-12 bg-gray-50 rounded-lg mx-auto mb-2 flex items-center justify-center">
-                        {getStatusIcon(status)}
-                      </div>
-                      <p className="text-sm">
-                        No{" "}
-                        {statusLabels[
-                          status as keyof typeof statusLabels
-                        ].toLowerCase()}{" "}
-                        tasks
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              return (
+                <StatusColumn
+                  key={status}
+                  status={status}
+                  tasks={statusTasks}
+                  statusLabels={statusLabels}
+                  statusColors={statusColors}
+                  statusHeaderColors={statusHeaderColors}
+                />
+              );
+            })}
+          </div>
+
+          {typeof window !== "undefined" &&
+            createPortal(
+              <DragOverlay>
+                {activeTask ? <TaskCard task={activeTask} /> : null}
+              </DragOverlay>,
+              document.body
+            )}
+        </DndContext>
       )}
 
       {tasksData && tasksData.totalElements > 20 && (
