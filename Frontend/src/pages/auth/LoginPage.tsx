@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, Code2 } from "lucide-react";
-import toast from "react-hot-toast";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import { authService } from "../../services/authService";
-import { useAuthStore } from "../../hooks/useAuthStore";
+import { useAuth } from "../../hooks/useAuth";
 import type { LoginRequest } from "../../types/auth";
 
 const TypingAnimation: React.FC<{ text: string; className?: string }> = ({
@@ -54,8 +52,7 @@ const TypingAnimation: React.FC<{ text: string; className?: string }> = ({
 export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
-  const setAuth = useAuthStore((state) => state.setAuth);
+  const { login } = useAuth();
 
   const {
     register,
@@ -66,15 +63,9 @@ export const LoginPage: React.FC = () => {
   const onSubmit = async (data: LoginRequest) => {
     setIsLoading(true);
     try {
-      const response = await authService.login(data);
-      if (response.success && response.data) {
-        setAuth(response.data.user, response.data.accessToken);
-        toast.success("Welcome back!");
-        navigate("/dashboard");
-      }
-    } catch (error: any) {
-      const message = error.response?.data?.message || "Login failed";
-      toast.error(message);
+      await login(data);
+    } catch (error) {
+      // Error handling is done in the useAuth hook
     } finally {
       setIsLoading(false);
     }

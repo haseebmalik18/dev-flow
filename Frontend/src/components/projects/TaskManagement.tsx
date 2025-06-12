@@ -311,7 +311,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   };
 
   const handleDragOver = (event: DragOverEvent) => {
-    // Optional: Add visual feedback during drag
+    // possibly ydd visual feedback during drag
   };
 
   const TaskCard: React.FC<{ task: TaskSummary }> = ({ task }) => {

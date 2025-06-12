@@ -5,6 +5,7 @@ import { ProjectOverview } from "../../components/dashboard/ProjectOverview";
 import { TasksOverview } from "../../components/dashboard/TasksOverview";
 import { QuickActions } from "../../components/dashboard/QuickActions";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
+import { PendingInvitationsComponent } from "../../components/invitations/PendingInvitationsComponent";
 
 export const DashboardPage: React.FC = () => {
   return (
@@ -24,7 +25,11 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             <div className="lg:col-span-1">
-              <RecentActivity />
+              <div className="space-y-6">
+                <PendingInvitationsComponent />
+
+                <RecentActivity />
+              </div>
             </div>
           </div>
         </div>

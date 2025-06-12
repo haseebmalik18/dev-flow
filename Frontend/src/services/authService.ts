@@ -49,4 +49,17 @@ export const authService = {
     const response = await api.post("/auth/reset-password", data);
     return response.data;
   },
+
+  logout: async (): Promise<ApiResponse<void>> => {
+    try {
+      const response = await api.post("/auth/logout");
+      return response.data;
+    } catch (error) {
+      return {
+        success: true,
+        message: "Logged out locally",
+        timestamp: new Date().toISOString(),
+      };
+    }
+  },
 };

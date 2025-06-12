@@ -67,16 +67,16 @@ const priorityOptions = [
 ];
 
 const colorOptions = [
-  "#3B82F6", // Blue
-  "#EF4444", // Red
-  "#10B981", // Green
-  "#8B5CF6", // Purple
-  "#F59E0B", // Amber
-  "#EC4899", // Pink
-  "#6366F1", // Indigo
-  "#14B8A6", // Teal
-  "#F97316", // Orange
-  "#84CC16", // Lime
+  "#3B82F6",
+  "#EF4444",
+  "#10B981",
+  "#8B5CF6",
+  "#F59E0B",
+  "#EC4899",
+  "#6366F1",
+  "#14B8A6",
+  "#F97316",
+  "#84CC16",
 ];
 
 export const EditProjectPage: React.FC = () => {

@@ -66,11 +66,11 @@ public class InvitationDTOs {
         private ProjectRole role;
         private InvitationStatus status;
         private String message;
+        private String token;
         private LocalDateTime expiresAt;
         private LocalDateTime createdAt;
         private LocalDateTime respondedAt;
         private String responseMessage;
-
 
         private ProjectSummary project;
         private UserSummary invitedBy;

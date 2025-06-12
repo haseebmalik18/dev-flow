@@ -22,8 +22,42 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      useAuthStore.getState().clearAuth();
-      window.location.href = "/login";
+      const errorMessage = error.response?.data?.message || "";
+      const url = error.config?.url || "";
+
+      const isInvitationError =
+        url.includes("/invitations/") ||
+        errorMessage.includes("invitation") ||
+        errorMessage.includes("This invitation");
+
+      const isPublicEndpoint =
+        url.includes("/auth/") ||
+        url.includes("/invitations/") ||
+        url.includes("/users/check-email");
+
+      const isRealAuthError =
+        errorMessage.includes("Invalid credentials") ||
+        errorMessage.includes("Token expired") ||
+        errorMessage.includes("Invalid token") ||
+        errorMessage.includes("Authentication failed");
+
+      console.log("401 Error Details:", {
+        url,
+        message: errorMessage,
+        isInvitationError,
+        isPublicEndpoint,
+        isRealAuthError,
+      });
+
+      if (
+        !isInvitationError &&
+        !isPublicEndpoint &&
+        (isRealAuthError || !errorMessage)
+      ) {
+        console.log("Logging out due to authentication error");
+        useAuthStore.getState().clearAuth();
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(error);
   }

@@ -1,11 +1,11 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Bell, Search, Settings, LogOut, Code2 } from "lucide-react";
-import { useAuthStore } from "../../hooks/useAuthStore";
-import { useUserProfile } from "../../hooks/useDashboard";
+import { useAuth } from "../../hooks/useAuth";
+import { useDashboardStats, useUserProfile } from "../../hooks/useDashboard";
 
 export const DashboardHeader: React.FC = () => {
-  const { user: authUser, clearAuth } = useAuthStore();
+  const { user: authUser, logout } = useAuth();
   const { data: profileData } = useUserProfile();
 
   const user = profileData || authUser;
@@ -23,6 +23,10 @@ export const DashboardHeader: React.FC = () => {
 
   const getRoleDisplay = (role: string) => {
     return role.charAt(0) + role.slice(1).toLowerCase();
+  };
+
+  const handleLogout = async () => {
+    await logout();
   };
 
   return (
@@ -91,7 +95,7 @@ export const DashboardHeader: React.FC = () => {
                 )}
 
                 <button
-                  onClick={clearAuth}
+                  onClick={handleLogout}
                   className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                   title="Sign Out"
                 >

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { AuthLayout } from "../../components/layout/AuthLayout";
 import { Button } from "../../components/ui/Button";
 import { authService } from "../../services/authService";
-import { useAuthStore } from "../../hooks/useAuthStore";
+import { useAuth } from "../../hooks/useAuth";
 import { VerificationCodeInput } from "../../components/ui/VerificationCodeInput";
 
 export const VerifyEmailPage: React.FC = () => {
@@ -15,9 +15,8 @@ export const VerifyEmailPage: React.FC = () => {
   const [countdown, setCountdown] = useState(60);
   const [codeError, setCodeError] = useState("");
   const location = useLocation();
-  const navigate = useNavigate();
   const email = location.state?.email || "";
-  const setAuth = useAuthStore((state) => state.setAuth);
+  const { verifyEmailAndLogin } = useAuth();
 
   useEffect(() => {
     if (countdown > 0) {
@@ -35,20 +34,11 @@ export const VerifyEmailPage: React.FC = () => {
     setCodeError("");
 
     try {
-      const response = await authService.verifyEmail({ email, code });
-      if (response.success && response.data) {
-        setAuth(response.data.user, response.data.accessToken);
-        toast.success("Email verified successfully! Welcome to DevFlow!");
-
-        setTimeout(() => {
-          navigate("/dashboard");
-        }, 1500);
-      }
+      await verifyEmailAndLogin({ email, code });
     } catch (error: any) {
       const message =
         error.response?.data?.message || "Invalid verification code";
       setCodeError(message);
-      toast.error(message);
     } finally {
       setIsLoading(false);
     }

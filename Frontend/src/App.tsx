@@ -22,13 +22,31 @@ import { EditProjectPage } from "./pages/projects/EditProjectPage";
 import { TasksPage } from "./pages/tasks/TasksPage";
 import { TaskDetailPage } from "./pages/tasks/TaskDetailPage";
 
+import { InvitationResponsePage } from "./pages/invitations/InvitationResponsePage";
+
 import { useAuthStore } from "./hooks/useAuthStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60 * 1000,
-      retry: 1,
+      retry: (failureCount, error: any) => {
+        if (
+          error?.response?.status === 401 ||
+          error?.response?.status === 403
+        ) {
+          return false;
+        }
+        return failureCount < 2;
+      },
+    },
+    mutations: {
+      retry: (failureCount, error: any) => {
+        if (error?.response?.status >= 400 && error?.response?.status < 500) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });
@@ -98,6 +116,9 @@ function App() {
               }
             />
 
+            {/* Public Invitation Route - No auth required initially */}
+            <Route path="/invite/:token" element={<InvitationResponsePage />} />
+
             {/* Protected Routes */}
             <Route
               path="/dashboard"
@@ -159,7 +180,29 @@ function App() {
             {/* Catch all route */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
-          <Toaster position="top-right" />
+
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 5000,
+              style: {
+                background: "#363636",
+                color: "#fff",
+              },
+              success: {
+                duration: 4000,
+                style: {
+                  background: "#10B981",
+                },
+              },
+              error: {
+                duration: 6000,
+                style: {
+                  background: "#EF4444",
+                },
+              },
+            }}
+          />
         </div>
       </Router>
     </QueryClientProvider>

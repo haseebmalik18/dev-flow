@@ -18,11 +18,15 @@ import {
   Settings,
   AlertTriangle,
   Loader2,
+  UserPlus,
+  Mail,
 } from "lucide-react";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Button } from "../../components/ui/Button";
 import { EnhancedTaskManagement } from "../../components/projects/TaskManagement";
 import { TaskFormModal } from "../../components/projects/TaskFormModal";
+import { ProjectInvitationsTab } from "../../components/invitations/ProjectInvitationsTab";
+import { InviteMembersModal } from "../../components/invitations/InviteMembersModal";
 import {
   useProject,
   useProjectMembers,
@@ -30,15 +34,19 @@ import {
   useArchiveProject,
 } from "../../hooks/useProjects";
 import { useProjectTasks, useTaskStats } from "../../hooks/useTasks";
+import { useAuthStore } from "../../hooks/useAuthStore";
 
 export const ProjectDetailPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuthStore();
+
   const [activeTab, setActiveTab] = useState<
-    "overview" | "tasks" | "team" | "activity"
+    "overview" | "tasks" | "team" | "invitations" | "activity"
   >("overview");
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<number | undefined>();
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   const {
     data: project,
@@ -67,6 +75,20 @@ export const ProjectDetailPage: React.FC = () => {
       id: task.id,
       title: task.title,
     })) || [];
+
+  const canUserManageMembers = (user: any, project: any) => {
+    if (!user || !project) return false;
+
+    if (project.owner?.id === user.id) return true;
+
+    const userMember = members?.find((member) => member.user.id === user.id);
+    if (userMember) {
+      const canManageRoles = ["OWNER", "ADMIN", "MANAGER"];
+      return canManageRoles.includes(userMember.role);
+    }
+
+    return user.role === "ADMIN" || user.role === "OWNER";
+  };
 
   if (isLoadingProject) {
     return (
@@ -175,6 +197,9 @@ export const ProjectDetailPage: React.FC = () => {
     setIsTaskModalOpen(true);
   };
 
+  // Check if current user can manage invitations
+  const canManageInvitations = canUserManageMembers(currentUser, project);
+
   const TeamMember: React.FC<{ member: any }> = ({ member }) => (
     <div className="flex items-center space-x-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
       <div className="relative">
@@ -200,9 +225,11 @@ export const ProjectDetailPage: React.FC = () => {
           Joined {formatDate(member.joinedAt)}
         </p>
       </div>
-      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-        <MoreHorizontal className="w-5 h-5 text-gray-400" />
-      </button>
+      {canManageInvitations && (
+        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <MoreHorizontal className="w-5 h-5 text-gray-400" />
+        </button>
+      )}
     </div>
   );
 
@@ -246,20 +273,24 @@ export const ProjectDetailPage: React.FC = () => {
               <Button variant="outline" icon={<Share2 className="w-4 h-4" />}>
                 Share
               </Button>
-              <Link to={`/projects/${id}/edit`}>
-                <Button variant="outline" icon={<Edit className="w-4 h-4" />}>
-                  Edit
+              {canManageInvitations && (
+                <Link to={`/projects/${id}/edit`}>
+                  <Button variant="outline" icon={<Edit className="w-4 h-4" />}>
+                    Edit
+                  </Button>
+                </Link>
+              )}
+              {canManageInvitations && (
+                <Button
+                  variant="outline"
+                  onClick={handleArchiveProject}
+                  loading={archiveProjectMutation.isPending}
+                  icon={<Archive className="w-4 h-4" />}
+                  className="text-red-600 border-red-600 hover:bg-red-50"
+                >
+                  Archive
                 </Button>
-              </Link>
-              <Button
-                variant="outline"
-                onClick={handleArchiveProject}
-                loading={archiveProjectMutation.isPending}
-                icon={<Archive className="w-4 h-4" />}
-                className="text-red-600 border-red-600 hover:bg-red-50"
-              >
-                Archive
-              </Button>
+              )}
             </div>
           </div>
 
@@ -348,6 +379,7 @@ export const ProjectDetailPage: React.FC = () => {
                 { id: "overview", label: "Overview", icon: FileText },
                 { id: "tasks", label: "Tasks", icon: CheckSquare },
                 { id: "team", label: "Team", icon: Users },
+                { id: "invitations", label: "Invitations", icon: UserPlus },
                 { id: "activity", label: "Activity", icon: Activity },
               ].map((tab) => (
                 <button
@@ -589,13 +621,16 @@ export const ProjectDetailPage: React.FC = () => {
                       >
                         Add New Task
                       </Button>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start cursor-pointer"
-                        icon={<Users className="w-4 h-4" />}
-                      >
-                        Invite Member
-                      </Button>
+                      {canManageInvitations && (
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start cursor-pointer"
+                          icon={<UserPlus className="w-4 h-4" />}
+                          onClick={() => setIsInviteModalOpen(true)}
+                        >
+                          Invite Member
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         className="w-full justify-start cursor-pointer"
@@ -603,13 +638,15 @@ export const ProjectDetailPage: React.FC = () => {
                       >
                         Export Report
                       </Button>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start cursor-pointer"
-                        icon={<Settings className="w-4 h-4" />}
-                      >
-                        Project Settings
-                      </Button>
+                      {canManageInvitations && (
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start cursor-pointer"
+                          icon={<Settings className="w-4 h-4" />}
+                        >
+                          Project Settings
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -631,9 +668,14 @@ export const ProjectDetailPage: React.FC = () => {
                   <h3 className="text-lg font-semibold text-gray-900">
                     Team Members
                   </h3>
-                  <Button icon={<Users className="w-4 h-4" />}>
-                    Invite Member
-                  </Button>
+                  {canManageInvitations && (
+                    <Button
+                      icon={<UserPlus className="w-4 h-4" />}
+                      onClick={() => setIsInviteModalOpen(true)}
+                    >
+                      Invite Member
+                    </Button>
+                  )}
                 </div>
                 {isLoadingMembers ? (
                   <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -653,13 +695,26 @@ export const ProjectDetailPage: React.FC = () => {
                     <div className="text-center py-8">
                       <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500 mb-4">No team members yet</p>
-                      <Button icon={<Plus className="w-4 h-4" />}>
-                        Invite First Member
-                      </Button>
+                      {canManageInvitations && (
+                        <Button
+                          icon={<Plus className="w-4 h-4" />}
+                          onClick={() => setIsInviteModalOpen(true)}
+                        >
+                          Invite First Member
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
+            )}
+
+            {activeTab === "invitations" && (
+              <ProjectInvitationsTab
+                projectId={parseInt(id!)}
+                projectName={project.name}
+                canManageInvitations={canManageInvitations}
+              />
             )}
 
             {activeTab === "activity" && (
@@ -692,6 +747,15 @@ export const ProjectDetailPage: React.FC = () => {
         projectMembers={members}
         availableTasks={availableTasks}
       />
+
+      {canManageInvitations && (
+        <InviteMembersModal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+          projectId={parseInt(id!)}
+          projectName={project.name}
+        />
+      )}
     </div>
   );
 };
