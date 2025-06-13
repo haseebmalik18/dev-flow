@@ -184,7 +184,7 @@ public class AuthService {
         }
 
         if (token.isUsed()) {
-   
+
             tokenRepository.delete(token);
             throw new AuthException("Reset code has already been used");
         }

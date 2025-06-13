@@ -15,6 +15,13 @@ import {
   GitMerge,
   Loader2,
   X,
+  User,
+  Hash,
+  Tag,
+  MessageCircle,
+  Link as LinkIcon,
+  Flag,
+  Users,
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import {
@@ -26,7 +33,6 @@ import {
   useAssignTask,
   useUnassignTask,
   useArchiveTask,
-  useRestoreTask,
   useBulkUpdateTasks,
 } from "../../hooks/useTasks";
 import type {
@@ -72,6 +78,486 @@ interface EnhancedTaskManagementProps {
   onEditTask?: (taskId: number) => void;
 }
 
+interface TaskCardModalProps {
+  task: TaskSummary | null;
+  isOpen: boolean;
+  onClose: () => void;
+  projectMembers?: Array<{
+    id: number;
+    user: {
+      id: number;
+      username: string;
+      firstName: string;
+      lastName: string;
+      avatar: string | null;
+    };
+  }>;
+  onEdit?: (taskId: number) => void;
+}
+
+const TaskCardModal: React.FC<TaskCardModalProps> = ({
+  task,
+  isOpen,
+  onClose,
+  projectMembers = [],
+  onEdit,
+}) => {
+  const [showActions, setShowActions] = useState(false);
+
+  const updateTaskMutation = useUpdateTask();
+  const deleteTaskMutation = useDeleteTask();
+  const completeTaskMutation = useCompleteTask();
+  const reopenTaskMutation = useReopenTask();
+  const assignTaskMutation = useAssignTask();
+  const unassignTaskMutation = useUnassignTask();
+  const archiveTaskMutation = useArchiveTask();
+
+  if (!isOpen || !task) return null;
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "DONE":
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case "IN_PROGRESS":
+        return <Play className="w-4 h-4 text-blue-600" />;
+      case "REVIEW":
+        return <Clock className="w-4 h-4 text-yellow-600" />;
+      default:
+        return <Pause className="w-4 h-4 text-gray-600" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "DONE":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "IN_PROGRESS":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "REVIEW":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "CRITICAL":
+        return "bg-red-100 text-red-800 border-red-200";
+      case "HIGH":
+        return "bg-orange-100 text-orange-800 border-orange-200";
+      case "MEDIUM":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      default:
+        return "bg-green-100 text-green-800 border-green-200";
+    }
+  };
+
+  const getPriorityIcon = (priority: string) => {
+    switch (priority) {
+      case "CRITICAL":
+        return <Flag className="w-4 h-4 text-red-600" />;
+      case "HIGH":
+        return <Flag className="w-4 h-4 text-orange-600" />;
+      case "MEDIUM":
+        return <Flag className="w-4 h-4 text-yellow-600" />;
+      default:
+        return <Flag className="w-4 h-4 text-green-600" />;
+    }
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "No due date";
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = date.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Tomorrow";
+    if (diffDays === -1) return "Yesterday";
+    if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
+    if (diffDays < 7) return `${diffDays} days`;
+
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      if (newStatus === "DONE") {
+        await completeTaskMutation.mutateAsync(task.id);
+      } else if (task.status === "DONE" && newStatus !== "DONE") {
+        await reopenTaskMutation.mutateAsync(task.id);
+        if (newStatus !== "TODO") {
+          await updateTaskMutation.mutateAsync({
+            id: task.id,
+            data: { status: newStatus as any },
+          });
+        }
+      } else {
+        await updateTaskMutation.mutateAsync({
+          id: task.id,
+          data: { status: newStatus as any },
+        });
+      }
+      setShowActions(false);
+    } catch (error) {
+      // Error handled by mutation hooks
+    }
+  };
+
+  const handleAssigneeChange = async (assigneeId: number | null) => {
+    try {
+      if (assigneeId) {
+        await assignTaskMutation.mutateAsync({ id: task.id, assigneeId });
+      } else {
+        await unassignTaskMutation.mutateAsync(task.id);
+      }
+      setShowActions(false);
+    } catch (error) {
+      // Error handled by mutation hooks
+    }
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm("Are you sure you want to delete this task?")) {
+      try {
+        await deleteTaskMutation.mutateAsync(task.id);
+        onClose();
+      } catch (error) {
+        // Error handled by mutation hook
+      }
+    }
+  };
+
+  const handleArchive = async () => {
+    try {
+      await archiveTaskMutation.mutateAsync(task.id);
+      setShowActions(false);
+    } catch (error) {
+      // Error handled by mutation hook
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div
+        className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div
+              className="w-1 h-8 rounded-full"
+              style={{ backgroundColor: task.project.color }}
+            />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">
+                {task.title}
+              </h1>
+              <div className="flex items-center space-x-2 mt-1">
+                <span className="text-sm text-gray-500">in</span>
+                <span className="text-sm font-medium text-blue-600">
+                  {task.project.name}
+                </span>
+                <span className="text-gray-400">•</span>
+                <span className="text-sm text-gray-500">
+                  Updated {formatDate(task.updatedAt)}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onEdit?.(task.id)}
+              icon={<Edit className="w-4 h-4" />}
+            >
+              Edit
+            </Button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        <div
+          className="flex overflow-hidden"
+          style={{ height: "calc(90vh - 120px)" }}
+        >
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-6">
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2">
+                  {getStatusIcon(task.status)}
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(
+                      task.status
+                    )}`}
+                  >
+                    {task.status.replace("_", " ")}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {getPriorityIcon(task.priority)}
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium border ${getPriorityColor(
+                      task.priority
+                    )}`}
+                  >
+                    {task.priority} Priority
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">
+                    Progress
+                  </span>
+                  <span className="text-sm text-gray-600">
+                    {task.progress}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${task.progress}%` }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  Description
+                </h3>
+                <div className="prose prose-sm max-w-none text-gray-700">
+                  {task.description || "No description provided."}
+                </div>
+              </div>
+
+              {task.tagList && task.tagList.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                    <Tag className="w-5 h-5 mr-2" />
+                    Tags
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {task.tagList.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-800 border"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Status Indicators
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {task.isOverdue && (
+                    <div className="flex items-center space-x-2 p-3 bg-red-50 rounded-lg border border-red-200">
+                      <AlertTriangle className="w-5 h-5 text-red-600" />
+                      <span className="text-sm font-medium text-red-800">
+                        Overdue
+                      </span>
+                    </div>
+                  )}
+                  {task.isBlocked && (
+                    <div className="flex items-center space-x-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                      <GitMerge className="w-5 h-5 text-orange-600" />
+                      <span className="text-sm font-medium text-orange-800">
+                        Blocked
+                      </span>
+                    </div>
+                  )}
+                  {!task.isOverdue && !task.isBlocked && (
+                    <div className="flex items-center space-x-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">
+                        On Track
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  Actions
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  <Link to={`/tasks/${task.id}`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<LinkIcon className="w-4 h-4" />}
+                    >
+                      View Full Details
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleArchive}
+                    icon={<Archive className="w-4 h-4" />}
+                  >
+                    Archive
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDelete}
+                    className="text-red-600 border-red-600 hover:bg-red-50"
+                    icon={<Trash2 className="w-4 h-4" />}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-80 border-l border-gray-200 bg-gray-50 overflow-y-auto">
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Assignee
+                </label>
+                {task.assignee ? (
+                  <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border">
+                    {task.assignee.avatar ? (
+                      <img
+                        src={task.assignee.avatar}
+                        alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
+                        className="w-8 h-8 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                        {task.assignee.firstName[0]}
+                        {task.assignee.lastName[0]}
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-medium text-gray-900">
+                        {task.assignee.firstName} {task.assignee.lastName}
+                      </div>
+                      {task.assignee.jobTitle && (
+                        <div className="text-sm text-gray-600">
+                          {task.assignee.jobTitle}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-dashed border-gray-300">
+                    <User className="w-8 h-8 text-gray-400" />
+                    <span className="text-gray-500">Unassigned</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Due Date
+                </label>
+                <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border">
+                  <Calendar className="w-5 h-5 text-gray-400" />
+                  <span
+                    className={`${
+                      task.isOverdue ? "text-red-600" : "text-gray-900"
+                    }`}
+                  >
+                    {formatDate(task.dueDate)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Change Status
+                </label>
+                <div className="space-y-2">
+                  {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => handleStatusChange(status)}
+                      className={`w-full flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
+                        task.status === status
+                          ? "bg-blue-50 border-blue-200 text-blue-700"
+                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      {getStatusIcon(status)}
+                      <span className="font-medium">
+                        {status.replace("_", " ")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Assign To
+                </label>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleAssigneeChange(null)}
+                    className="w-full flex items-center space-x-3 p-3 bg-white rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                    <span>Unassigned</span>
+                  </button>
+                  {projectMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() => handleAssigneeChange(member.user.id)}
+                      className={`w-full flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
+                        task.assignee?.id === member.user.id
+                          ? "bg-blue-50 border-blue-200 text-blue-700"
+                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      {member.user.avatar ? (
+                        <img
+                          src={member.user.avatar}
+                          alt={`${member.user.firstName} ${member.user.lastName}`}
+                          className="w-5 h-5 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-5 h-5 bg-gray-300 rounded-full flex items-center justify-center text-xs">
+                          {member.user.firstName[0]}
+                        </div>
+                      )}
+                      <span>
+                        {member.user.firstName} {member.user.lastName}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   projectId,
   projectMembers = [],
@@ -82,14 +568,12 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"list" | "board">("list");
-  const [showCompleted, setShowCompleted] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
-  const [showBulkActions, setShowBulkActions] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
-  const [showMenu, setShowMenu] = useState(false);
   const [activeTask, setActiveTask] = useState<TaskSummary | null>(null);
   const [localTasks, setLocalTasks] = useState<TaskSummary[]>([]);
+  const [selectedTaskForModal, setSelectedTaskForModal] =
+    useState<TaskSummary | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -125,29 +609,15 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     }
 
     return baseFilters;
-  }, [
-    projectId,
-    searchTerm,
-    statusFilter,
-    priorityFilter,
-    assigneeFilter,
-    showCompleted,
-  ]);
+  }, [projectId, searchTerm, statusFilter, priorityFilter, assigneeFilter]);
 
   const {
     data: tasksData,
     isLoading: isLoadingTasks,
     error: tasksError,
-  } = useProjectTasks(projectId, currentPage, 20, filters);
+  } = useProjectTasks(projectId, currentPage, 100, filters);
 
   const updateTaskMutation = useUpdateTask();
-  const deleteTaskMutation = useDeleteTask();
-  const completeTaskMutation = useCompleteTask();
-  const reopenTaskMutation = useReopenTask();
-  const assignTaskMutation = useAssignTask();
-  const unassignTaskMutation = useUnassignTask();
-  const archiveTaskMutation = useArchiveTask();
-  const restoreTaskMutation = useRestoreTask();
   const bulkUpdateMutation = useBulkUpdateTasks();
 
   const tasks = tasksData?.content || [];
@@ -167,19 +637,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
         return <Clock className="w-4 h-4 text-yellow-600" />;
       default:
         return <Pause className="w-4 h-4 text-gray-600" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "done":
-        return "bg-green-100 text-green-800";
-      case "in_progress":
-        return "bg-blue-100 text-blue-800";
-      case "review":
-        return "bg-yellow-100 text-yellow-800";
-      default:
-        return "bg-gray-100 text-gray-800";
     }
   };
 
@@ -225,52 +682,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  const handleTaskSelect = (taskId: number, selected: boolean) => {
-    if (selected) {
-      setSelectedTasks((prev) => [...prev, taskId]);
-    } else {
-      setSelectedTasks((prev) => prev.filter((id) => id !== taskId));
-    }
-  };
-
-  const handleSelectAll = (selected: boolean) => {
-    if (selected) {
-      setSelectedTasks(tasks.map((task) => task.id));
-    } else {
-      setSelectedTasks([]);
-    }
-  };
-
-  const handleBulkStatusUpdate = async (newStatus: string) => {
-    if (selectedTasks.length === 0) return;
-
-    try {
-      await bulkUpdateMutation.mutateAsync({
-        taskIds: selectedTasks,
-        status: newStatus as any,
-      });
-      setSelectedTasks([]);
-      setShowBulkActions(false);
-    } catch (error) {
-      // Error handled by mutation hook
-    }
-  };
-
-  const handleBulkAssign = async (assigneeId: number) => {
-    if (selectedTasks.length === 0) return;
-
-    try {
-      await bulkUpdateMutation.mutateAsync({
-        taskIds: selectedTasks,
-        assigneeId,
-      });
-      setSelectedTasks([]);
-      setShowBulkActions(false);
-    } catch (error) {
-      // Error handled by mutation hook
-    }
-  };
-
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const task = tasks.find((t) => t.id === active.id);
@@ -291,7 +702,6 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     const prevTasks = [...localTasks];
     const taskIdx = localTasks.findIndex((t) => t.id === taskId);
     if (taskIdx === -1) return;
-    const prevStatus = localTasks[taskIdx].status;
 
     const updatedTasks = localTasks.map((t) =>
       t.id === taskId ? { ...t, status: newStatus } : t
@@ -304,19 +714,12 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
         data: { status: newStatus },
       });
     } catch (error) {
-      // Revert on error
       setLocalTasks(prevTasks);
       toast.error("Failed to update task status. Please try again.");
     }
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
-    // possibly ydd visual feedback during drag
-  };
-
   const TaskCard: React.FC<{ task: TaskSummary }> = ({ task }) => {
-    const [showMenu, setShowMenu] = useState(false);
-
     const {
       attributes,
       listeners,
@@ -335,54 +738,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     const style = {
       transform: CSS.Transform.toString(transform),
       transition,
-    };
-
-    const handleStatusChange = async (newStatus: string) => {
-      try {
-        if (newStatus === "DONE") {
-          await completeTaskMutation.mutateAsync(task.id);
-        } else if (task.status === "DONE" && newStatus !== "DONE") {
-          await reopenTaskMutation.mutateAsync(task.id);
-          if (newStatus !== "TODO") {
-            await updateTaskMutation.mutateAsync({
-              id: task.id,
-              data: { status: newStatus as any },
-            });
-          }
-        } else {
-          await updateTaskMutation.mutateAsync({
-            id: task.id,
-            data: { status: newStatus as any },
-          });
-        }
-        setShowMenu(false);
-      } catch (error) {
-        // Error handled by mutation hooks
-      }
-    };
-
-    const handleAssigneeChange = async (assigneeId: number | null) => {
-      try {
-        if (assigneeId) {
-          await assignTaskMutation.mutateAsync({ id: task.id, assigneeId });
-        } else {
-          await unassignTaskMutation.mutateAsync(task.id);
-        }
-        setShowMenu(false);
-      } catch (error) {
-        // Error handled by mutation hooks
-      }
-    };
-
-    const handleDelete = async () => {
-      if (window.confirm("Are you sure you want to delete this task?")) {
-        try {
-          await deleteTaskMutation.mutateAsync(task.id);
-          setShowMenu(false);
-        } catch (error) {
-          // Error handled by mutation hook
-        }
-      }
+      opacity: isDragging ? 0.5 : 1,
     };
 
     return (
@@ -391,215 +747,67 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
         style={style}
         {...attributes}
         {...listeners}
-        className="relative"
+        className={`bg-white rounded-lg border-l-4 ${getPriorityColor(
+          task.priority
+        )} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-all duration-200 cursor-pointer group`}
+        onClick={() => setSelectedTaskForModal(task)}
       >
-        <Link
-          to={`/tasks/${task.id}`}
-          className={`block bg-white rounded-lg border-l-4 ${getPriorityColor(
-            task.priority
-          )} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-all duration-200`}
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-start space-x-3 flex-1">
-              <input
-                type="checkbox"
-                checked={selectedTasks.includes(task.id)}
-                onChange={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleTaskSelect(task.id, e.target.checked);
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-              <div className="flex-1 min-w-0">
-                <h4 className="font-medium text-gray-900 truncate">
-                  {task.title}
-                </h4>
-                <p className="text-sm text-gray-600 line-clamp-2 mt-1">
-                  {task.description}
-                </p>
-              </div>
-            </div>
-
-            <div className="relative ml-3">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowMenu(!showMenu);
-                }}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
-              >
-                <MoreHorizontal className="w-4 h-4 text-gray-400" />
-              </button>
-
-              {showMenu && (
-                <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[180px]">
-                  <button
-                    onClick={() => onEditTask?.(task.id)}
-                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <Edit className="w-4 h-4" />
-                    <span>Edit Task</span>
-                  </button>
-
-                  <div className="border-t border-gray-100 my-1" />
-
-                  <div className="px-3 py-1">
-                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      Status
-                    </span>
-                  </div>
-                  {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => (
-                    <button
-                      key={status}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleStatusChange(status);
-                      }}
-                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
-                        task.status === status
-                          ? "bg-blue-50 text-blue-700"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      {getStatusIcon(status)}
-                      <span>{status.replace("_", " ")}</span>
-                    </button>
-                  ))}
-
-                  <div className="border-t border-gray-100 my-1" />
-
-                  <div className="px-3 py-1">
-                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      Assignee
-                    </span>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleAssigneeChange(null);
-                    }}
-                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <X className="w-4 h-4" />
-                    <span>Unassigned</span>
-                  </button>
-                  {projectMembers.map((member) => (
-                    <button
-                      key={member.id}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleAssigneeChange(member.user.id);
-                      }}
-                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
-                        task.assignee?.id === member.user.id
-                          ? "bg-blue-50 text-blue-700"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      {member.user.avatar ? (
-                        <img
-                          src={member.user.avatar}
-                          alt={`${member.user.firstName} ${member.user.lastName}`}
-                          className="w-4 h-4 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center text-xs">
-                          {member.user.firstName[0]}
-                        </div>
-                      )}
-                      <span>
-                        {member.user.firstName} {member.user.lastName}
-                      </span>
-                    </button>
-                  ))}
-
-                  <div className="border-t border-gray-100 my-1" />
-
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      archiveTaskMutation.mutate(task.id);
-                    }}
-                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <Archive className="w-4 h-4" />
-                    <span>Archive</span>
-                  </button>
-
-                  <button
-                    onClick={handleDelete}
-                    className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Delete</span>
-                  </button>
-                </div>
-              )}
-            </div>
+        <div className="space-y-3">
+          <div className="flex items-start justify-between">
+            <h4 className="font-medium text-gray-900 line-clamp-2 text-sm">
+              {task.title}
+            </h4>
+            <span
+              className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadgeColor(
+                task.priority
+              )}`}
+            >
+              {task.priority}
+            </span>
           </div>
 
-          <div className="mb-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-700">
-                Progress
+          {task.description && (
+            <p className="text-sm text-gray-600 line-clamp-2">
+              {task.description}
+            </p>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-600">Progress</span>
+              <span className="text-gray-900 font-medium">
+                {task.progress}%
               </span>
-              <span className="text-xs text-gray-600">{task.progress}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-1.5">
               <div
                 className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                 style={{ width: `${task.progress}%` }}
-              ></div>
+              />
             </div>
           </div>
 
           {task.tagList && task.tagList.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-3">
-              {task.tagList.map((tag, index) => (
+            <div className="flex flex-wrap gap-1">
+              {task.tagList.slice(0, 3).map((tag, index) => (
                 <span
                   key={index}
-                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
                 >
                   {tag}
                 </span>
               ))}
+              {task.tagList.length > 3 && (
+                <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded">
+                  +{task.tagList.length - 3}
+                </span>
+              )}
             </div>
           )}
 
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-1">
-                {getStatusIcon(task.status)}
-                <span
-                  className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                    task.status
-                  )}`}
-                >
-                  {task.status.replace("_", " ").toUpperCase()}
-                </span>
-              </div>
-
-              <span
-                className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadgeColor(
-                  task.priority
-                )}`}
-              >
-                {task.priority}
-              </span>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              {task.assignee && (
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex items-center space-x-2">
+              {task.assignee ? (
                 <div className="flex items-center space-x-1">
                   {task.assignee.avatar ? (
                     <img
@@ -614,6 +822,8 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
                     </div>
                   )}
                 </div>
+              ) : (
+                <User className="w-6 h-6 text-gray-400" />
               )}
 
               <div className="flex items-center space-x-1">
@@ -621,25 +831,19 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
                   <AlertTriangle className="w-4 h-4 text-red-500" />
                 )}
                 {task.isBlocked && (
-                  <div className="group relative">
-                    <GitMerge className="w-5 h-5 text-orange-500" />
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                      This task has dependencies
-                    </div>
-                  </div>
+                  <GitMerge className="w-4 h-4 text-orange-500" />
                 )}
-                <Calendar className="w-4 h-4 text-gray-400" />
-                <span
-                  className={`text-xs ${
-                    task.isOverdue ? "text-red-600" : "text-gray-500"
-                  }`}
-                >
-                  {formatDate(task.dueDate)}
-                </span>
               </div>
             </div>
+
+            <div className="flex items-center space-x-1 text-xs text-gray-500">
+              <Calendar className="w-3 h-3" />
+              <span className={task.isOverdue ? "text-red-600" : ""}>
+                {formatDate(task.dueDate)}
+              </span>
+            </div>
           </div>
-        </Link>
+        </div>
       </div>
     );
   };
@@ -666,10 +870,9 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
     return (
       <div
-        key={status}
         className={`border rounded-lg ${
           statusColors[status as keyof typeof statusColors]
-        } shadow-sm`}
+        } shadow-sm min-h-[600px] flex flex-col`}
       >
         <div
           className={`px-4 py-3 border-b ${
@@ -677,21 +880,25 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
           } rounded-t-lg`}
         >
           <div className="flex items-center justify-between">
-            <h4 className="font-medium text-gray-900">
-              {statusLabels[status as keyof typeof statusLabels]}
-            </h4>
+            <div className="flex items-center space-x-2">
+              {getStatusIcon(status)}
+              <h4 className="font-medium text-gray-900">
+                {statusLabels[status as keyof typeof statusLabels]}
+              </h4>
+            </div>
             <span className="bg-white text-gray-700 text-xs px-2 py-1 rounded-full shadow-sm">
               {tasks.length}
             </span>
           </div>
         </div>
+
         <SortableContext
           items={tasks.map((task) => task.id)}
           strategy={verticalListSortingStrategy}
         >
           <div
             ref={setNodeRef}
-            className="p-3 space-y-3 min-h-[500px]"
+            className="p-3 space-y-3 flex-1"
             data-status={status}
           >
             {tasks.map((task) => (
@@ -746,120 +953,23 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Tasks</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Kanban Board</h3>
           <p className="text-sm text-gray-600">
-            {tasks.length} of {totalTasks} tasks
-            {selectedTasks.length > 0 && (
-              <span className="ml-2 text-blue-600">
-                ({selectedTasks.length} selected)
-              </span>
-            )}
+            {tasks.length} tasks • Drag and drop to update status
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          {selectedTasks.length > 0 && (
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowBulkActions(!showBulkActions)}
-              >
-                Bulk Actions ({selectedTasks.length})
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedTasks([])}
-              >
-                Clear
-              </Button>
-            </div>
-          )}
-
-          <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode("list")}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors cursor-pointer ${
-                viewMode === "list"
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600"
-              }`}
-            >
-              List
-            </button>
-            <button
-              onClick={() => setViewMode("board")}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors cursor-pointer ${
-                viewMode === "board"
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600"
-              }`}
-            >
-              Board
-            </button>
-          </div>
-
-          <Button
-            onClick={onAddTask}
-            icon={<Plus className="w-4 h-4" />}
-            className="cursor-pointer"
-          >
-            Add Task
-          </Button>
-        </div>
+        <Button
+          onClick={onAddTask}
+          icon={<Plus className="w-4 h-4" />}
+          className="cursor-pointer"
+        >
+          Add Task
+        </Button>
       </div>
 
-      {showBulkActions && selectedTasks.length > 0 && (
-        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-blue-900">
-              {selectedTasks.length} tasks selected
-            </span>
-            <div className="flex items-center space-x-2">
-              <select
-                onChange={(e) => handleBulkStatusUpdate(e.target.value)}
-                className="px-3 py-1 border border-blue-300 rounded text-sm"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Change Status
-                </option>
-                <option value="TODO">To Do</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="REVIEW">Review</option>
-                <option value="DONE">Done</option>
-              </select>
-
-              <select
-                onChange={(e) => handleBulkAssign(parseInt(e.target.value))}
-                className="px-3 py-1 border border-blue-300 rounded text-sm"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Assign To
-                </option>
-                {projectMembers.map((member) => (
-                  <option key={member.id} value={member.user.id}>
-                    {member.user.firstName} {member.user.lastName}
-                  </option>
-                ))}
-              </select>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowBulkActions(false)}
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
@@ -909,110 +1019,74 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
             ))}
           </select>
 
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={showCompleted}
-              onChange={(e) => setShowCompleted(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">Show Completed</span>
-          </label>
-
-          <div className="flex items-center space-x-2">
-            {tasks.length > 0 && (
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={selectedTasks.length === tasks.length}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700">Select All</span>
-              </label>
-            )}
+          <div className="flex items-center justify-end">
+            <span className="text-sm text-gray-600">{tasks.length} tasks</span>
           </div>
         </div>
       </div>
 
-      {viewMode === "list" ? (
-        <div className="space-y-4">
-          {tasks.length > 0 ? (
-            tasks.map((task) => <TaskCard key={task.id} task={task} />)
-          ) : (
-            <div className="text-center py-8">
-              <div className="text-gray-500">
-                <CheckCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium mb-2">No tasks found</p>
-                <p className="text-sm">
-                  {searchTerm ||
-                  statusFilter !== "all" ||
-                  priorityFilter !== "all" ||
-                  assigneeFilter !== "all"
-                    ? "Try adjusting your filters"
-                    : "Create your first task to get started"}
-                </p>
-              </div>
-            </div>
-          )}
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => {
+            const statusTasks = localTasks.filter((t) => t.status === status);
+            const statusLabels = {
+              TODO: "To Do",
+              IN_PROGRESS: "In Progress",
+              REVIEW: "Review",
+              DONE: "Completed",
+            };
+            const statusColors = {
+              TODO: "border-gray-200 bg-white",
+              IN_PROGRESS: "border-blue-200 bg-white",
+              REVIEW: "border-yellow-200 bg-white",
+              DONE: "border-green-200 bg-white",
+            };
+            const statusHeaderColors = {
+              TODO: "bg-gray-50 border-gray-200",
+              IN_PROGRESS: "bg-blue-50 border-blue-200",
+              REVIEW: "bg-yellow-50 border-yellow-200",
+              DONE: "bg-green-50 border-green-200",
+            };
+
+            return (
+              <StatusColumn
+                key={status}
+                status={status}
+                tasks={statusTasks}
+                statusLabels={statusLabels}
+                statusColors={statusColors}
+                statusHeaderColors={statusHeaderColors}
+              />
+            );
+          })}
         </div>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOver={handleDragOver}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => {
-              const statusTasks = localTasks.filter((t) => t.status === status);
-              const statusLabels = {
-                TODO: "To Do",
-                IN_PROGRESS: "In Progress",
-                REVIEW: "Review",
-                DONE: "Completed",
-              };
-              const statusColors = {
-                TODO: "border-gray-200 bg-white",
-                IN_PROGRESS: "border-blue-200 bg-white",
-                REVIEW: "border-yellow-200 bg-white",
-                DONE: "border-green-200 bg-white",
-              };
-              const statusHeaderColors = {
-                TODO: "bg-gray-50 border-gray-200",
-                IN_PROGRESS: "bg-blue-50 border-blue-200",
-                REVIEW: "bg-yellow-50 border-yellow-200",
-                DONE: "bg-green-50 border-green-200",
-              };
 
-              return (
-                <StatusColumn
-                  key={status}
-                  status={status}
-                  tasks={statusTasks}
-                  statusLabels={statusLabels}
-                  statusColors={statusColors}
-                  statusHeaderColors={statusHeaderColors}
-                />
-              );
-            })}
-          </div>
+        {typeof window !== "undefined" &&
+          createPortal(
+            <DragOverlay>
+              {activeTask ? <TaskCard task={activeTask} /> : null}
+            </DragOverlay>,
+            document.body
+          )}
+      </DndContext>
 
-          {typeof window !== "undefined" &&
-            createPortal(
-              <DragOverlay>
-                {activeTask ? <TaskCard task={activeTask} /> : null}
-              </DragOverlay>,
-              document.body
-            )}
-        </DndContext>
-      )}
+      <TaskCardModal
+        task={selectedTaskForModal}
+        isOpen={!!selectedTaskForModal}
+        onClose={() => setSelectedTaskForModal(null)}
+        projectMembers={projectMembers}
+        onEdit={onEditTask}
+      />
 
-      {tasksData && tasksData.totalElements > 20 && (
+      {tasksData && tasksData.totalElements > 100 && (
         <div className="flex items-center justify-between pt-6">
           <div className="text-sm text-gray-700">
-            Showing {currentPage * 20 + 1} to{" "}
-            {Math.min((currentPage + 1) * 20, tasksData.totalElements)} of{" "}
+            Showing {currentPage * 100 + 1} to{" "}
+            {Math.min((currentPage + 1) * 100, tasksData.totalElements)} of{" "}
             {tasksData.totalElements} tasks
           </div>
 
@@ -1027,7 +1101,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
 
             <Button
               variant="outline"
-              disabled={(currentPage + 1) * 20 >= tasksData.totalElements}
+              disabled={(currentPage + 1) * 100 >= tasksData.totalElements}
               onClick={() => setCurrentPage(currentPage + 1)}
             >
               Next
