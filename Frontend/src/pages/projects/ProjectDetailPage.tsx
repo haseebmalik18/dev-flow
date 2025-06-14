@@ -46,6 +46,7 @@ export const ProjectDetailPage: React.FC = () => {
   >("overview");
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<number | undefined>();
+  const [parentTaskId, setParentTaskId] = useState<number | undefined>();
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   const {
@@ -189,15 +190,22 @@ export const ProjectDetailPage: React.FC = () => {
 
   const handleAddTask = () => {
     setEditingTaskId(undefined);
+    setParentTaskId(undefined);
     setIsTaskModalOpen(true);
   };
 
   const handleEditTask = (taskId: number) => {
     setEditingTaskId(taskId);
+    setParentTaskId(undefined);
     setIsTaskModalOpen(true);
   };
 
-  // Check if current user can manage invitations
+  const handleAddSubtask = (parentTaskId: number) => {
+    setEditingTaskId(undefined);
+    setParentTaskId(parentTaskId);
+    setIsTaskModalOpen(true);
+  };
+
   const canManageInvitations = canUserManageMembers(currentUser, project);
 
   const TeamMember: React.FC<{ member: any }> = ({ member }) => (
@@ -659,6 +667,7 @@ export const ProjectDetailPage: React.FC = () => {
                 projectMembers={members}
                 onAddTask={handleAddTask}
                 onEditTask={handleEditTask}
+                onAddSubtask={handleAddSubtask}
               />
             )}
 
@@ -741,9 +750,11 @@ export const ProjectDetailPage: React.FC = () => {
         onClose={() => {
           setIsTaskModalOpen(false);
           setEditingTaskId(undefined);
+          setParentTaskId(undefined);
         }}
         projectId={parseInt(id!)}
         taskId={editingTaskId}
+        parentTaskId={parentTaskId}
         projectMembers={members}
         availableTasks={availableTasks}
       />
