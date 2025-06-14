@@ -24,6 +24,8 @@ import {
   Users,
   Send,
 } from "lucide-react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import type { DropResult } from "@hello-pangea/dnd";
 import { Button } from "../ui/Button";
 import {
   useProjectTasks,
@@ -42,26 +44,6 @@ import type {
   TaskFilterRequest,
 } from "../../services/taskService";
 import { Link } from "react-router-dom";
-import {
-  DndContext,
-  DragOverlay,
-  useSensor,
-  useSensors,
-  PointerSensor,
-  useDroppable,
-} from "@dnd-kit/core";
-import type {
-  DragStartEvent,
-  DragEndEvent,
-  DragOverEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { createPortal } from "react-dom";
-import { CSS } from "@dnd-kit/utilities";
 import { toast } from "react-hot-toast";
 
 interface EnhancedTaskManagementProps {
@@ -94,18 +76,9 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
-  const [activeTask, setActiveTask] = useState<TaskSummary | null>(null);
   const [localTasks, setLocalTasks] = useState<TaskSummary[]>([]);
   const [selectedTaskForModal, setSelectedTaskForModal] =
     useState<TaskSummary | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  );
 
   const filters: TaskFilterRequest = useMemo(() => {
     const baseFilters: TaskFilterRequest = {
@@ -150,6 +123,16 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
   useEffect(() => {
     setLocalTasks(tasks);
   }, [tasks]);
+
+  const tasksByStatus = useMemo(() => {
+    const organized = {
+      TODO: localTasks.filter((task) => task.status === "TODO"),
+      IN_PROGRESS: localTasks.filter((task) => task.status === "IN_PROGRESS"),
+      REVIEW: localTasks.filter((task) => task.status === "REVIEW"),
+      DONE: localTasks.filter((task) => task.status === "DONE"),
+    };
+    return organized;
+  }, [localTasks]);
 
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
@@ -206,169 +189,163 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event;
-    const task = tasks.find((t) => t.id === active.id);
-    if (task) {
-      setActiveTask(task);
+  const onDragEnd = async (result: DropResult) => {
+    const { destination, source, draggableId } = result;
+
+    if (!destination) {
+      return;
     }
-  };
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveTask(null);
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
 
-    if (!over) return;
+    const taskId = parseInt(draggableId);
+    const newStatus = destination.droppableId as
+      | "TODO"
+      | "IN_PROGRESS"
+      | "REVIEW"
+      | "DONE";
 
-    const taskId = active.id;
-    const newStatus = over.id as "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
+    const originalTasks = [...localTasks];
 
-    const prevTasks = [...localTasks];
-    const taskIdx = localTasks.findIndex((t) => t.id === taskId);
-    if (taskIdx === -1) return;
-
-    const updatedTasks = localTasks.map((t) =>
-      t.id === taskId ? { ...t, status: newStatus } : t
+    const updatedTasks = localTasks.map((task) =>
+      task.id === taskId ? { ...task, status: newStatus } : task
     );
     setLocalTasks(updatedTasks);
 
     try {
       await updateTaskMutation.mutateAsync({
-        id: taskId as number,
+        id: taskId,
         data: { status: newStatus },
       });
+      toast.success("Task status updated successfully!");
     } catch (error) {
-      setLocalTasks(prevTasks);
+      setLocalTasks(originalTasks);
       toast.error("Failed to update task status. Please try again.");
     }
   };
 
-  const TaskCard: React.FC<{ task: TaskSummary }> = ({ task }) => {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({
-      id: task.id,
-      data: {
-        type: "Task",
-        task,
-      },
-    });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
-    };
-
+  const TaskCard: React.FC<{
+    task: TaskSummary;
+    index: number;
+  }> = ({ task, index }) => {
     return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
-        className={`bg-white rounded-lg border-l-4 ${getPriorityColor(
-          task.priority
-        )} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-all duration-200 cursor-pointer group`}
-        onClick={() => setSelectedTaskForModal(task)}
-      >
-        <div className="space-y-3">
-          <div className="flex items-start justify-between">
-            <h4 className="font-medium text-gray-900 line-clamp-2 text-sm">
-              {task.title}
-            </h4>
-            <span
-              className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadgeColor(
-                task.priority
-              )}`}
-            >
-              {task.priority}
-            </span>
-          </div>
-
-          {task.description && (
-            <p className="text-sm text-gray-600 line-clamp-2">
-              {task.description}
-            </p>
-          )}
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-600">Progress</span>
-              <span className="text-gray-900 font-medium">
-                {task.progress}%
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
-              <div
-                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                style={{ width: `${task.progress}%` }}
-              />
-            </div>
-          </div>
-
-          {task.tagList && task.tagList.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {task.tagList.slice(0, 3).map((tag, index) => (
+      <Draggable draggableId={task.id.toString()} index={index}>
+        {(provided, snapshot) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            {...provided.dragHandleProps}
+            className={`bg-white rounded-lg border-l-4 ${getPriorityColor(
+              task.priority
+            )} border-r border-t border-b border-gray-200 p-4 hover:shadow-md transition-all duration-200 cursor-pointer group mb-3 ${
+              snapshot.isDragging ? "shadow-lg rotate-2 z-50 opacity-90" : ""
+            }`}
+            onClick={(e) => {
+              if (!snapshot.isDragging) {
+                setSelectedTaskForModal(task);
+              }
+            }}
+          >
+            <div className="space-y-3">
+              <div className="flex items-start justify-between">
+                <h4 className="font-medium text-gray-900 line-clamp-2 text-sm">
+                  {task.title}
+                </h4>
                 <span
-                  key={index}
-                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
+                  className={`px-2 py-1 rounded-full text-xs font-medium ml-2 flex-shrink-0 ${getPriorityBadgeColor(
+                    task.priority
+                  )}`}
                 >
-                  {tag}
+                  {task.priority}
                 </span>
-              ))}
-              {task.tagList.length > 3 && (
-                <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded">
-                  +{task.tagList.length - 3}
-                </span>
-              )}
-            </div>
-          )}
+              </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <div className="flex items-center space-x-2">
-              {task.assignee ? (
-                <div className="flex items-center space-x-1">
-                  {task.assignee.avatar ? (
-                    <img
-                      src={task.assignee.avatar}
-                      alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
-                      className="w-6 h-6 rounded-full"
-                    />
-                  ) : (
-                    <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
-                      {task.assignee.firstName[0]}
-                      {task.assignee.lastName[0]}
-                    </div>
+              {task.description && (
+                <p className="text-sm text-gray-600 line-clamp-2">
+                  {task.description}
+                </p>
+              )}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Progress</span>
+                  <span className="text-gray-900 font-medium">
+                    {task.progress}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${task.progress}%` }}
+                  />
+                </div>
+              </div>
+
+              {task.tagList && task.tagList.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {task.tagList.slice(0, 3).map((tag, tagIndex) => (
+                    <span
+                      key={tagIndex}
+                      className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {task.tagList.length > 3 && (
+                    <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded">
+                      +{task.tagList.length - 3}
+                    </span>
                   )}
                 </div>
-              ) : (
-                <User className="w-6 h-6 text-gray-400" />
               )}
 
-              <div className="flex items-center space-x-1">
-                {task.isOverdue && (
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                )}
-                {task.isBlocked && (
-                  <GitMerge className="w-4 h-4 text-orange-500" />
-                )}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                <div className="flex items-center space-x-2">
+                  {task.assignee ? (
+                    <div className="flex items-center space-x-1">
+                      {task.assignee.avatar ? (
+                        <img
+                          src={task.assignee.avatar}
+                          alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
+                          className="w-6 h-6 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                          {task.assignee.firstName[0]}
+                          {task.assignee.lastName[0]}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <User className="w-6 h-6 text-gray-400" />
+                  )}
+
+                  <div className="flex items-center space-x-1">
+                    {task.isOverdue && (
+                      <AlertTriangle className="w-4 h-4 text-red-500" />
+                    )}
+                    {task.isBlocked && (
+                      <GitMerge className="w-4 h-4 text-orange-500" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-1 text-xs text-gray-500">
+                  <Calendar className="w-3 h-3" />
+                  <span className={task.isOverdue ? "text-red-600" : ""}>
+                    {formatDate(task.dueDate)}
+                  </span>
+                </div>
               </div>
             </div>
-
-            <div className="flex items-center space-x-1 text-xs text-gray-500">
-              <Calendar className="w-3 h-3" />
-              <span className={task.isOverdue ? "text-red-600" : ""}>
-                {formatDate(task.dueDate)}
-              </span>
-            </div>
           </div>
-        </div>
-      </div>
+        )}
+      </Draggable>
     );
   };
 
@@ -388,20 +365,16 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
     statusColors: Record<string, string>;
     statusHeaderColors: Record<string, string>;
   }> = ({ status, tasks, statusLabels, statusColors, statusHeaderColors }) => {
-    const { setNodeRef } = useDroppable({
-      id: status,
-    });
-
     return (
       <div
         className={`border rounded-lg ${
           statusColors[status as keyof typeof statusColors]
-        } shadow-sm min-h-[600px] flex flex-col`}
+        } shadow-sm h-[600px] flex flex-col`}
       >
         <div
           className={`px-4 py-3 border-b ${
             statusHeaderColors[status as keyof typeof statusHeaderColors]
-          } rounded-t-lg`}
+          } rounded-t-lg flex-shrink-0`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -416,34 +389,57 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
           </div>
         </div>
 
-        <SortableContext
-          items={tasks.map((task) => task.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div
-            ref={setNodeRef}
-            className="p-3 space-y-3 flex-1"
-            data-status={status}
-          >
-            {tasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
-            ))}
-            {tasks.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <div className="w-12 h-12 bg-gray-50 rounded-lg mx-auto mb-2 flex items-center justify-center">
-                  {getStatusIcon(status)}
+        <Droppable droppableId={status}>
+          {(provided, snapshot) => (
+            <div
+              ref={provided.innerRef}
+              {...provided.droppableProps}
+              className={`p-3 flex-1 overflow-y-auto transition-all duration-200 ${
+                snapshot.isDraggingOver
+                  ? "bg-blue-50 ring-2 ring-blue-300 ring-opacity-50"
+                  : ""
+              }`}
+              style={{
+                scrollbarWidth: "thin",
+                scrollbarColor: "#cbd5e1 #f1f5f9",
+                minHeight: "500px",
+              }}
+            >
+              {tasks.length === 0 && !snapshot.isDraggingOver && (
+                <div className="text-center py-8 text-gray-500">
+                  <div className="w-12 h-12 bg-gray-50 rounded-lg mx-auto mb-2 flex items-center justify-center">
+                    {getStatusIcon(status)}
+                  </div>
+                  <p className="text-sm">
+                    No{" "}
+                    {statusLabels[
+                      status as keyof typeof statusLabels
+                    ].toLowerCase()}{" "}
+                    tasks
+                  </p>
                 </div>
-                <p className="text-sm">
-                  No{" "}
-                  {statusLabels[
-                    status as keyof typeof statusLabels
-                  ].toLowerCase()}{" "}
-                  tasks
-                </p>
-              </div>
-            )}
-          </div>
-        </SortableContext>
+              )}
+
+              {tasks.length === 0 && snapshot.isDraggingOver && (
+                <div className="text-center py-8 text-blue-600">
+                  <div className="w-16 h-16 bg-blue-100 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                    {getStatusIcon(status)}
+                  </div>
+                  <p className="text-sm font-medium">
+                    Drop task here to move to{" "}
+                    {statusLabels[status as keyof typeof statusLabels]}
+                  </p>
+                </div>
+              )}
+
+              {tasks.map((task, index) => (
+                <TaskCard key={task.id} task={task} index={index} />
+              ))}
+
+              {provided.placeholder}
+            </div>
+          )}
+        </Droppable>
       </div>
     );
   };
@@ -549,14 +545,11 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
         </div>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
+      <DragDropContext onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map((status) => {
-            const statusTasks = localTasks.filter((t) => t.status === status);
+            const statusTasks =
+              tasksByStatus[status as keyof typeof tasksByStatus];
             const statusLabels = {
               TODO: "To Do",
               IN_PROGRESS: "In Progress",
@@ -588,15 +581,7 @@ export const EnhancedTaskManagement: React.FC<EnhancedTaskManagementProps> = ({
             );
           })}
         </div>
-
-        {typeof window !== "undefined" &&
-          createPortal(
-            <DragOverlay>
-              {activeTask ? <TaskCard task={activeTask} /> : null}
-            </DragOverlay>,
-            document.body
-          )}
-      </DndContext>
+      </DragDropContext>
 
       <TaskCardModal
         task={selectedTaskForModal}
