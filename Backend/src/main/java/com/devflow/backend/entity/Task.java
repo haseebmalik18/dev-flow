@@ -13,6 +13,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Data
 @Builder
@@ -93,6 +94,11 @@ public class Task {
     @Builder.Default
     private List<Comment> comments = new ArrayList<>();
 
+
+    @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<TaskAttachment> attachments = new ArrayList<>();
+
     @Builder.Default
     @Column(nullable = false)
     private Integer progress = 0;
@@ -108,6 +114,7 @@ public class Task {
     @UpdateTimestamp
     @Column(nullable = false)
     private LocalDateTime updatedAt;
+
 
     public void addSubtask(Task subtask) {
         subtasks.add(subtask);
@@ -185,5 +192,60 @@ public class Task {
         if (allSubtasksDone && this.status != TaskStatus.DONE) {
             completeTask();
         }
+    }
+
+
+    public void addAttachment(TaskAttachment attachment) {
+        attachments.add(attachment);
+        attachment.setTask(this);
+    }
+
+    public void removeAttachment(TaskAttachment attachment) {
+        attachments.remove(attachment);
+        attachment.setTask(null);
+    }
+
+    public int getAttachmentsCount() {
+        return (int) attachments.stream()
+                .filter(attachment -> !attachment.getIsDeleted())
+                .count();
+    }
+
+    public long getTotalAttachmentSize() {
+        return attachments.stream()
+                .filter(attachment -> !attachment.getIsDeleted())
+                .mapToLong(TaskAttachment::getFileSize)
+                .sum();
+    }
+
+    public boolean hasAttachments() {
+        return attachments.stream()
+                .anyMatch(attachment -> !attachment.getIsDeleted());
+    }
+
+    public List<TaskAttachment> getActiveAttachments() {
+        return attachments.stream()
+                .filter(attachment -> !attachment.getIsDeleted())
+                .collect(Collectors.toList());
+    }
+
+    public List<TaskAttachment> getImageAttachments() {
+        return attachments.stream()
+                .filter(attachment -> !attachment.getIsDeleted() && attachment.isImage())
+                .collect(Collectors.toList());
+    }
+
+    public List<TaskAttachment> getDocumentAttachments() {
+        return attachments.stream()
+                .filter(attachment -> !attachment.getIsDeleted() && attachment.isDocument())
+                .collect(Collectors.toList());
+    }
+
+    public String getFormattedAttachmentSize() {
+        long bytes = getTotalAttachmentSize();
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 }

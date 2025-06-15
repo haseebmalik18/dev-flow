@@ -88,6 +88,13 @@ public class TaskDTOs {
 
         private Integer commentsCount;
         private List<String> tagList;
+
+
+        private Integer attachmentsCount;
+        private Long totalAttachmentSize;
+        private String totalAttachmentSizeFormatted;
+        private Boolean hasAttachments;
+        private List<AttachmentSummary> recentAttachments;
     }
 
     @Data
@@ -109,6 +116,11 @@ public class TaskDTOs {
         private UserSummary assignee;
         private ProjectSummary project;
         private List<String> tagList;
+
+
+        private Integer attachmentsCount;
+        private Boolean hasAttachments;
+        private String totalAttachmentSizeFormatted;
     }
 
     @Data
@@ -155,6 +167,12 @@ public class TaskDTOs {
         private Long overdueTasks;
         private Long blockedTasks;
         private Double averageProgress;
+
+
+        private Long totalAttachments;
+        private Long totalAttachmentSize;
+        private String totalAttachmentSizeFormatted;
+        private Double averageAttachmentsPerTask;
     }
 
     @Data
@@ -172,6 +190,10 @@ public class TaskDTOs {
         private LocalDateTime dueDateFrom;
         private LocalDateTime dueDateTo;
         private String search;
+
+
+        private Boolean hasAttachments;
+        private String attachmentType; // "image", "document", "archive"
     }
 
     @Data
@@ -192,5 +214,63 @@ public class TaskDTOs {
     @AllArgsConstructor
     public static class TaskDependencyRequest {
         private Long dependencyTaskId;
+    }
+
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AttachmentSummary {
+        private Long id;
+        private String fileName;
+        private String originalFileName;
+        private Long fileSize;
+        private String fileSizeFormatted;
+        private String contentType;
+        private String fileExtension;
+        private Boolean isImage;
+        private Boolean isDocument;
+        private Boolean isArchive;
+        private LocalDateTime createdAt;
+        private UserSummary uploadedBy;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TaskWithAttachmentsResponse {
+        private TaskResponse task;
+        private List<AttachmentSummary> attachments;
+        private AttachmentStatsResponse attachmentStats;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AttachmentStatsResponse {
+        private Long totalAttachments;
+        private Long totalSizeBytes;
+        private String totalSizeFormatted;
+        private Long imageCount;
+        private Long documentCount;
+        private Long archiveCount;
+        private Long otherCount;
+        private UserSummary topUploader;
+        private String mostRecentUpload;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TaskActivitySummary {
+        private TaskSummary task;
+        private Integer recentCommentsCount;
+        private Integer recentAttachmentsCount;
+        private LocalDateTime lastActivity;
+        private List<String> recentActivityTypes;
     }
 }

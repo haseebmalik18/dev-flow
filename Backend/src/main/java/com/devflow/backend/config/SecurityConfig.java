@@ -3,6 +3,7 @@ package com.devflow.backend.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -45,10 +46,37 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/health").permitAll()
 
                         // Public invitation endpoints (for email links)
-                        .requestMatchers("/api/v1/invitations/*").permitAll() // Get invitation by token (public for email links)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/invitations/*").permitAll()
 
                         // Public user validation endpoints
                         .requestMatchers("/api/v1/users/check-email").permitAll()
+
+                        // File attachment endpoints (require authentication)
+                        .requestMatchers("/api/v1/attachments/**").authenticated()
+
+                        // Specific file upload endpoint (multipart form data)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/attachments/upload").authenticated()
+
+                        // File download endpoints (require authentication for security)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/attachments/*/download").authenticated()
+
+                        // Task endpoints (for attachment context)
+                        .requestMatchers("/api/v1/tasks/**").authenticated()
+
+                        // Project endpoints (for attachment context)
+                        .requestMatchers("/api/v1/projects/**").authenticated()
+
+                        // Comment endpoints
+                        .requestMatchers("/api/v1/comments/**").authenticated()
+
+                        // Dashboard endpoints
+                        .requestMatchers("/api/v1/dashboard/**").authenticated()
+
+                        // User endpoints
+                        .requestMatchers("/api/v1/users/**").authenticated()
+
+                        // Admin endpoints (for file validation/management)
+                        .requestMatchers("/api/v1/attachments/admin/**").hasRole("ADMIN")
 
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
@@ -65,10 +93,50 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
+
+        // Allow specific origins (update for production)
+        configuration.setAllowedOriginPatterns(List.of(
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "http://localhost:5173",
+                "https://devflow-*.vercel.app",
+                "https://your-production-domain.com"
+        ));
+
+        // Allow specific HTTP methods including file upload
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "OPTIONS",
+                "PATCH"
+        ));
+
+        // Allow specific headers including file upload headers
+        configuration.setAllowedHeaders(List.of(
+                "*",
+                "Authorization",
+                "Content-Type",
+                "Content-Disposition",
+                "Content-Length",
+                "X-Requested-With",
+                "Accept",
+                "Origin",
+                "Access-Control-Request-Method",
+                "Access-Control-Request-Headers"
+        ));
+
+        // Expose headers that frontend might need
+        configuration.setExposedHeaders(List.of(
+                "Authorization",
+                "Content-Disposition",
+                "Content-Type",
+                "Content-Length"
+        ));
+
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
