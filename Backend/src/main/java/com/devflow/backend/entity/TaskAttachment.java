@@ -18,7 +18,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "task_attachments", indexes = {
         @Index(name = "idx_attachment_task_created", columnList = "task_id, created_at"),
-        @Index(name = "idx_attachment_uploaded_by", columnList = "uploaded_by_id, created_at")
+        @Index(name = "idx_attachment_uploaded_by", columnList = "uploaded_by_id, created_at"),
+        @Index(name = "idx_attachment_s3key", columnList = "s3Key")
 })
 public class TaskAttachment {
 
@@ -27,11 +28,11 @@ public class TaskAttachment {
     private Long id;
 
     @NotBlank
-    @Column(nullable = false)
+    @Column(nullable = false, length = 500)
     private String fileName;
 
     @NotBlank
-    @Column(nullable = false)
+    @Column(nullable = false, length = 500)
     private String originalFileName;
 
     @Column(nullable = false)
@@ -42,10 +43,10 @@ public class TaskAttachment {
     private String contentType;
 
     @NotBlank
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 500)
     private String s3Key;
 
-    @Column
+    @Column(columnDefinition = "TEXT")
     private String s3Url; // Pre-signed URL (temporary)
 
     @Column
@@ -71,6 +72,7 @@ public class TaskAttachment {
 
     @Column
     private LocalDateTime deletedAt;
+
 
 
     public boolean isImage() {
@@ -118,5 +120,29 @@ public class TaskAttachment {
 
     public boolean isUrlExpired() {
         return urlExpiresAt != null && LocalDateTime.now().isAfter(urlExpiresAt);
+    }
+
+
+
+    public void validateFieldLengths() {
+        if (fileName != null && fileName.length() > 500) {
+            throw new IllegalArgumentException("File name exceeds maximum length of 500 characters");
+        }
+
+        if (originalFileName != null && originalFileName.length() > 500) {
+            throw new IllegalArgumentException("Original file name exceeds maximum length of 500 characters");
+        }
+
+        if (s3Key != null && s3Key.length() > 500) {
+            throw new IllegalArgumentException("S3 key exceeds maximum length of 500 characters");
+        }
+    }
+
+
+
+    @PrePersist
+    @PreUpdate
+    private void validateBeforeSave() {
+        validateFieldLengths();
     }
 }
