@@ -24,8 +24,10 @@ import {
   Eye,
   Activity,
   Link as LinkIcon,
+  Paperclip,
 } from "lucide-react";
 import { Button } from "../ui/Button";
+import { UnifiedActivityFeed } from "../tasks/UnifiedActivityFeed";
 import {
   useUpdateTask,
   useDeleteTask,
@@ -36,7 +38,7 @@ import {
   useArchiveTask,
   useSubtasks,
 } from "../../hooks/useTasks";
-import { useComments, useCreateComment } from "../../hooks/useComments";
+import { useTaskAttachments } from "../../hooks/useAttachments";
 import type { TaskSummary } from "../../services/taskService";
 import { Link } from "react-router-dom";
 
@@ -146,41 +148,8 @@ const SubtaskItem = memo(
   }
 );
 
-const CommentItem = memo(
-  ({
-    comment,
-    formatTimeAgo,
-  }: {
-    comment: any;
-    formatTimeAgo: (date: string) => string;
-  }) => (
-    <div className="flex space-x-2">
-      <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center text-white text-xs font-medium">
-        {comment.author.firstName[0]}
-      </div>
-      <div className="flex-1">
-        <div className="bg-gray-50 rounded p-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-gray-900">
-              {comment.author.firstName} {comment.author.lastName}
-            </span>
-            <span className="text-xs text-gray-500">
-              {formatTimeAgo(comment.createdAt)}
-            </span>
-          </div>
-          <p className="text-xs text-gray-700">{comment.content}</p>
-          {comment.isEdited && (
-            <span className="text-xs text-gray-400 italic">(edited)</span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-);
-
 export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
   ({ task, isOpen, onClose, projectMembers = [], onEdit, onAddSubtask }) => {
-    const [newComment, setNewComment] = useState("");
     const [showQuickActions, setShowQuickActions] = useState(false);
     const [showAssigneeSearch, setShowAssigneeSearch] = useState(false);
     const [assigneeSearchTerm, setAssigneeSearchTerm] = useState("");
@@ -196,16 +165,15 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
     const unassignTaskMutation = useUnassignTask();
     const archiveTaskMutation = useArchiveTask();
 
-    const { data: comments, isLoading: commentsLoading } = useComments(
-      isOpen && taskId ? taskId : 0
-    );
-    const createCommentMutation = useCreateComment();
-
     const {
       data: subtasks,
       isLoading: subtasksLoading,
       refetch: refetchSubtasks,
     } = useSubtasks(isOpen && taskId ? taskId : 0);
+
+    const { data: attachments } = useTaskAttachments(
+      isOpen && taskId ? taskId : 0
+    );
 
     const getStatusColor = useCallback((status: string) => {
       switch (status) {
@@ -383,24 +351,6 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
       }
     }, [task, deleteTaskMutation, onClose]);
 
-    const handleSubmitComment = useCallback(
-      async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newComment.trim() || !task) return;
-
-        try {
-          await createCommentMutation.mutateAsync({
-            taskId: task.id,
-            content: newComment.trim(),
-          });
-          setNewComment("");
-        } catch (error) {
-          // Error handled by mutation hook
-        }
-      },
-      [newComment, task, createCommentMutation]
-    );
-
     const handleBackdropClick = useCallback(
       (e: React.MouseEvent) => {
         if (e.target === e.currentTarget) {
@@ -434,7 +384,6 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
 
     useEffect(() => {
       if (!isOpen) {
-        setNewComment("");
         setShowQuickActions(false);
         setShowAssigneeSearch(false);
         setAssigneeSearchTerm("");
@@ -449,7 +398,7 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
         onClick={handleBackdropClick}
       >
         <div
-          className="bg-white rounded-xl max-w-3xl w-full max-h-[92vh] overflow-hidden shadow-2xl flex flex-col border border-gray-100"
+          className="bg-white rounded-xl max-w-4xl w-full max-h-[92vh] overflow-hidden shadow-2xl flex flex-col border border-gray-100"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-start justify-between p-6 border-b border-gray-200">
@@ -580,119 +529,7 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
                     )}
                   </div>
 
-                  {task.tagList && task.tagList.length > 0 && (
-                    <div>
-                      <h3 className="text-base font-medium text-gray-900 mb-3 flex items-center">
-                        <Tag className="w-4 h-4 mr-2" />
-                        Tags
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {task.tagList.map((tag, index) => (
-                          <span
-                            key={index}
-                            className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <h3 className="text-base font-medium text-gray-900 mb-3 flex items-center">
-                      <Activity className="w-4 h-4 mr-2" />
-                      Activity & Comments
-                    </h3>
-
-                    <form onSubmit={handleSubmitComment} className="mb-4">
-                      <div className="flex space-x-2">
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                          U
-                        </div>
-                        <div className="flex-1">
-                          <textarea
-                            value={newComment}
-                            onChange={(e) => setNewComment(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            rows={2}
-                            placeholder="Write a comment..."
-                          />
-                          <div className="flex justify-end mt-2">
-                            <Button
-                              type="submit"
-                              size="sm"
-                              disabled={!newComment.trim()}
-                              loading={createCommentMutation.isPending}
-                            >
-                              Comment
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </form>
-
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {commentsLoading ? (
-                        <div className="text-sm text-gray-500 text-center py-4">
-                          Loading activity...
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex space-x-2">
-                            <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
-                              <CheckCircle className="w-3 h-3 text-green-600" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="text-xs text-gray-600">
-                                <span className="font-medium">
-                                  Task created
-                                </span>
-                                <span className="ml-2 text-gray-500">
-                                  {formatTimeAgo(task.updatedAt)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {comments && comments.length > 0 ? (
-                            comments.map((comment) => (
-                              <CommentItem
-                                key={comment.id}
-                                comment={comment}
-                                formatTimeAgo={formatTimeAgo}
-                              />
-                            ))
-                          ) : (
-                            <div className="text-sm text-gray-500 text-center py-2">
-                              No comments yet
-                            </div>
-                          )}
-
-                          {task.assignee && (
-                            <div className="flex space-x-2">
-                              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                                <User className="w-3 h-3 text-blue-600" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="text-xs text-gray-600">
-                                  <span className="font-medium">Assigned</span>{" "}
-                                  to{" "}
-                                  <span className="font-medium">
-                                    {task.assignee.firstName}{" "}
-                                    {task.assignee.lastName}
-                                  </span>
-                                  <span className="ml-2 text-gray-500">
-                                    {formatTimeAgo(task.updatedAt)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
+                  <UnifiedActivityFeed taskId={task.id} />
                 </div>
 
                 <div className="space-y-4">
@@ -881,6 +718,21 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
                       </span>
                     </div>
                   </div>
+
+                  {attachments && attachments.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
+                        Attachments
+                      </h3>
+                      <div className="flex items-center space-x-2 px-3 py-2.5 bg-gray-50 rounded">
+                        <Paperclip className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm text-gray-700">
+                          {attachments.length} file
+                          {attachments.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {task.tagList && task.tagList.length > 0 && (
                     <div>

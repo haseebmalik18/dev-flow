@@ -82,22 +82,14 @@
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
 
-		<!-- AWS S3 Dependencies for File Attachments -->
+		<!-- AWS S3 Dependencies for File Attachments - FIXED VERSION -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
 			<version>${aws.sdk.version}</version>
 		</dependency>
-		<dependency>
-			<groupId>software.amazon.awssdk</groupId>
-			<artifactId>url-connection-client</artifactId>
-			<version>${aws.sdk.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>software.amazon.awssdk</groupId>
-			<artifactId>s3-transfer-manager</artifactId>
-			<version>${aws.sdk.version}</version>
-		</dependency>
+		<!-- REMOVED: url-connection-client to avoid conflict -->
+		<!-- REMOVED: s3-transfer-manager to avoid conflict -->
 
 		<dependency>
 			<groupId>org.postgresql</groupId>
