@@ -9,12 +9,16 @@ import {
   File,
   MoreHorizontal,
   ExternalLink,
+  Play,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "../ui/Button";
+import { AttachmentPreview } from "./AttachmentPreview";
 import {
   useTaskAttachments,
   useDeleteAttachment,
   useDownloadAttachment,
+  useAttachmentPreviewUtils,
 } from "../../hooks/useAttachments";
 import type { AttachmentSummary } from "../../services/attachmentService";
 
@@ -28,12 +32,16 @@ interface AttachmentItemProps {
   attachment: AttachmentSummary;
   onDelete: (id: number) => void;
   onDownload: (id: number) => void;
+  onPreview: (attachment: AttachmentSummary) => void;
+  isPreviewable: boolean;
 }
 
 const AttachmentItem: React.FC<AttachmentItemProps> = ({
   attachment,
   onDelete,
   onDownload,
+  onPreview,
+  isPreviewable,
 }) => {
   const [showActions, setShowActions] = useState(false);
 
@@ -68,6 +76,17 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
     });
   };
 
+  const getPreviewIcon = () => {
+    if (attachment.isImage) {
+      return <ZoomIn className="w-4 h-4" />;
+    } else if (attachment.contentType === "application/pdf") {
+      return <FileText className="w-4 h-4" />;
+    } else if (attachment.contentType?.startsWith("text/")) {
+      return <FileText className="w-4 h-4" />;
+    }
+    return <Eye className="w-4 h-4" />;
+  };
+
   return (
     <div className="group flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
       <div className="flex-shrink-0">{getFileIcon()}</div>
@@ -80,6 +99,11 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
             {attachment.fileExtension.toUpperCase()}
           </span>
+          {isPreviewable && (
+            <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+              Previewable
+            </span>
+          )}
         </div>
         <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
           <span>{attachment.fileSizeFormatted}</span>
@@ -91,6 +115,16 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
       </div>
 
       <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {isPreviewable && (
+          <button
+            onClick={() => onPreview(attachment)}
+            className="p-2 hover:bg-gray-200 rounded transition-colors text-blue-600"
+            title="Preview"
+          >
+            {getPreviewIcon()}
+          </button>
+        )}
+
         <button
           onClick={() => onDownload(attachment.id)}
           className="p-2 hover:bg-gray-200 rounded transition-colors"
@@ -109,21 +143,10 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
 
           {showActions && (
             <div className="absolute right-0 top-10 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10 min-w-[140px]">
-              <button
-                onClick={() => {
-                  onDownload(attachment.id);
-                  setShowActions(false);
-                }}
-                className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download</span>
-              </button>
-
-              {attachment.isImage && (
+              {isPreviewable && (
                 <button
                   onClick={() => {
-                    // Could implement preview modal here
+                    onPreview(attachment);
                     setShowActions(false);
                   }}
                   className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -140,11 +163,20 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
                 }}
                 className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               >
+                <Download className="w-4 h-4" />
+                <span>Download</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onDownload(attachment.id);
+                  setShowActions(false);
+                }}
+                className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
                 <ExternalLink className="w-4 h-4" />
                 <span>Open</span>
               </button>
-
-              <div className="border-t border-gray-100 my-1" />
 
               <button
                 onClick={() => {
@@ -175,7 +207,12 @@ export const AttachmentList: React.FC<AttachmentListProps> = ({
   className = "",
   showStats = false,
 }) => {
+  const [previewAttachment, setPreviewAttachment] =
+    useState<AttachmentSummary | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
   const { data: attachments, isLoading, error } = useTaskAttachments(taskId);
+  const { isPreviewable } = useAttachmentPreviewUtils();
 
   const deleteAttachmentMutation = useDeleteAttachment();
   const downloadAttachmentMutation = useDownloadAttachment();
@@ -194,6 +231,16 @@ export const AttachmentList: React.FC<AttachmentListProps> = ({
     } catch (error) {
       // Error handled by mutation hook
     }
+  };
+
+  const handlePreview = (attachment: AttachmentSummary) => {
+    setPreviewAttachment(attachment);
+    setIsPreviewOpen(true);
+  };
+
+  const handleClosePreview = () => {
+    setIsPreviewOpen(false);
+    setPreviewAttachment(null);
   };
 
   if (error) {
@@ -237,54 +284,80 @@ export const AttachmentList: React.FC<AttachmentListProps> = ({
       else if (attachment.isDocument) acc.documents++;
       else if (attachment.isArchive) acc.archives++;
       else acc.others++;
+
+      if (isPreviewable(attachment.contentType)) {
+        acc.previewable++;
+      }
+
       return acc;
     },
-    { images: 0, documents: 0, archives: 0, others: 0 }
+    { images: 0, documents: 0, archives: 0, others: 0, previewable: 0 }
   );
 
   return (
-    <div className={className}>
-      {showStats && (
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-          <div className="grid grid-cols-4 gap-4 text-center">
-            <div>
-              <div className="text-lg font-semibold text-gray-900">
-                {stats.images}
+    <>
+      <div className={className}>
+        {showStats && (
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-5 gap-4 text-center">
+              <div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {stats.images}
+                </div>
+                <div className="text-xs text-gray-500">Images</div>
               </div>
-              <div className="text-xs text-gray-500">Images</div>
-            </div>
-            <div>
-              <div className="text-lg font-semibold text-gray-900">
-                {stats.documents}
+              <div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {stats.documents}
+                </div>
+                <div className="text-xs text-gray-500">Documents</div>
               </div>
-              <div className="text-xs text-gray-500">Documents</div>
-            </div>
-            <div>
-              <div className="text-lg font-semibold text-gray-900">
-                {stats.archives}
+              <div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {stats.archives}
+                </div>
+                <div className="text-xs text-gray-500">Archives</div>
               </div>
-              <div className="text-xs text-gray-500">Archives</div>
-            </div>
-            <div>
-              <div className="text-lg font-semibold text-gray-900">
-                {stats.others}
+              <div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {stats.others}
+                </div>
+                <div className="text-xs text-gray-500">Others</div>
               </div>
-              <div className="text-xs text-gray-500">Others</div>
+              <div>
+                <div className="text-lg font-semibold text-green-600">
+                  {stats.previewable}
+                </div>
+                <div className="text-xs text-gray-500">Previewable</div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="space-y-1">
-        {attachments.map((attachment) => (
-          <AttachmentItem
-            key={attachment.id}
-            attachment={attachment}
-            onDelete={handleDelete}
-            onDownload={handleDownload}
-          />
-        ))}
+        <div className="space-y-1">
+          {attachments.map((attachment) => (
+            <AttachmentItem
+              key={attachment.id}
+              attachment={attachment}
+              onDelete={handleDelete}
+              onDownload={handleDownload}
+              onPreview={handlePreview}
+              isPreviewable={isPreviewable(attachment.contentType)}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      {previewAttachment && (
+        <AttachmentPreview
+          attachment={previewAttachment}
+          attachments={attachments}
+          isOpen={isPreviewOpen}
+          onClose={handleClosePreview}
+          onDownload={handleDownload}
+          onDelete={handleDelete}
+        />
+      )}
+    </>
   );
 };

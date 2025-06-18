@@ -16,11 +16,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Set;
+import java.util.Arrays;
+import java.util.HashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -33,21 +39,38 @@ public class TaskAttachmentService {
     private final ActivityRepository activityRepository;
     private final S3FileStorageService s3Service;
 
+
+    private static final Set<String> PREVIEWABLE_IMAGE_TYPES = Set.of(
+            "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml"
+    );
+
+    private static final Set<String> PREVIEWABLE_DOCUMENT_TYPES = Set.of(
+            "application/pdf", "text/plain", "text/csv", "application/json", "text/xml", "application/xml"
+    );
+
+    private static final Set<String> PREVIEWABLE_CODE_TYPES = Set.of(
+            "text/javascript", "text/css", "text/html", "application/javascript"
+    );
+
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    public static class StreamData {
+        private byte[] data;
+        private String contentType;
+        private String fileName;
+    }
+
     public UploadResponse uploadAttachment(Long taskId, MultipartFile file, User user) {
         try {
-
             Task task = findTaskWithAccess(taskId, user);
 
             if (!canUserUploadToTask(user, task)) {
                 throw new AuthException("You don't have permission to upload files to this task");
             }
 
-
             S3FileStorageService.FileUploadResult uploadResult = s3Service.uploadFile(file, taskId, user.getId());
-
-
             String secureFileName = generateSecureFileName(file.getOriginalFilename());
-
 
             TaskAttachment attachment = TaskAttachment.builder()
                     .fileName(secureFileName)
@@ -62,7 +85,6 @@ public class TaskAttachmentService {
                     .build();
 
             attachment = attachmentRepository.save(attachment);
-
 
             Activity activity = Activity.builder()
                     .type(ActivityType.FILE_UPLOADED)
@@ -93,6 +115,77 @@ public class TaskAttachmentService {
         }
     }
 
+
+    public Map<String, Object> getPreviewData(Long attachmentId, User user) {
+        TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
+
+        if (attachment.isUrlExpired()) {
+            refreshAttachmentUrl(attachment);
+        }
+
+        Map<String, Object> previewData = new HashMap<>();
+        previewData.put("id", attachment.getId());
+        previewData.put("fileName", attachment.getOriginalFileName());
+        previewData.put("contentType", attachment.getContentType());
+        previewData.put("fileSize", attachment.getFileSize());
+        previewData.put("fileSizeFormatted", attachment.getFileSizeFormatted());
+        previewData.put("isPreviewable", isPreviewable(attachment.getContentType()));
+        previewData.put("previewType", getPreviewType(attachment.getContentType()));
+
+
+        String baseUrl = "http://localhost:3000/api/v1"; // This should come from config
+        String streamUrl = String.format("%s/attachments/%d/stream", baseUrl, attachment.getId());
+        previewData.put("streamUrl", streamUrl);
+
+
+        previewData.put("downloadUrl", attachment.getS3Url());
+        previewData.put("urlExpiresAt", attachment.getUrlExpiresAt());
+
+        return previewData;
+    }
+
+    public StreamData streamAttachment(Long attachmentId, User user, boolean thumbnail) throws IOException {
+        TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
+
+
+        byte[] fileData = s3Service.getFileData(attachment.getS3Key());
+
+        if (thumbnail && attachment.isImage()) {
+
+            return new StreamData(fileData, attachment.getContentType(), attachment.getOriginalFileName());
+        }
+
+        return new StreamData(fileData, attachment.getContentType(), attachment.getOriginalFileName());
+    }
+
+
+    private boolean isPreviewable(String contentType) {
+        if (contentType == null) return false;
+
+        return PREVIEWABLE_IMAGE_TYPES.contains(contentType.toLowerCase()) ||
+                PREVIEWABLE_DOCUMENT_TYPES.contains(contentType.toLowerCase()) ||
+                PREVIEWABLE_CODE_TYPES.contains(contentType.toLowerCase());
+    }
+
+
+    private String getPreviewType(String contentType) {
+        if (contentType == null) return "unsupported";
+
+        String lowerType = contentType.toLowerCase();
+
+        if (PREVIEWABLE_IMAGE_TYPES.contains(lowerType)) {
+            return "image";
+        } else if (lowerType.equals("application/pdf")) {
+            return "pdf";
+        } else if (PREVIEWABLE_DOCUMENT_TYPES.contains(lowerType)) {
+            return "text";
+        } else if (PREVIEWABLE_CODE_TYPES.contains(lowerType)) {
+            return "code";
+        }
+
+        return "unsupported";
+    }
+
     @Transactional(readOnly = true)
     public List<AttachmentSummary> getTaskAttachments(Long taskId, User user) {
         Task task = findTaskWithAccess(taskId, user);
@@ -107,7 +200,6 @@ public class TaskAttachmentService {
     public AttachmentResponse getAttachment(Long attachmentId, User user) {
         TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
 
-
         if (attachment.isUrlExpired()) {
             refreshAttachmentUrl(attachment);
         }
@@ -117,11 +209,7 @@ public class TaskAttachmentService {
 
     public String getDownloadUrl(Long attachmentId, User user) {
         TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
-
-
         String freshUrl = s3Service.generatePresignedUrl(attachment.getS3Key());
-
-
         updateAttachmentUrlAsync(attachment.getId(), freshUrl);
 
         log.info("Download URL generated for attachment: {} by user: {}",
@@ -137,13 +225,9 @@ public class TaskAttachmentService {
             throw new AuthException("You don't have permission to delete this attachment");
         }
 
-
         attachment.markAsDeleted();
         attachmentRepository.save(attachment);
-
-
         deleteFromS3Async(attachment.getS3Key());
-
 
         Activity activity = Activity.builder()
                 .type(ActivityType.PROJECT_UPDATED)
@@ -225,7 +309,6 @@ public class TaskAttachmentService {
                 .collect(Collectors.toList());
     }
 
-
     @Scheduled(fixedRate = 3600000)
     @Transactional
     public void refreshExpiringUrls() {
@@ -246,7 +329,6 @@ public class TaskAttachmentService {
         }
     }
 
-
     @Scheduled(fixedRate = 86400000)
     @Transactional
     public void cleanupOldDeletedAttachments() {
@@ -254,8 +336,6 @@ public class TaskAttachmentService {
         attachmentRepository.deleteOldDeletedAttachments(cutoff);
         log.info("Cleaned up old deleted attachments older than {}", cutoff);
     }
-
-
 
     private Task findTaskWithAccess(Long taskId, User user) {
         Task task = taskRepository.findById(taskId)
@@ -280,19 +360,16 @@ public class TaskAttachmentService {
     }
 
     private boolean canUserUploadToTask(User user, Task task) {
-
         if (task.getAssignee() != null && task.getAssignee().equals(user)) {
             return true;
         }
         if (task.getCreator().equals(user)) {
             return true;
         }
-
         return true;
     }
 
     private boolean canUserDeleteAttachment(User user, TaskAttachment attachment) {
-
         if (attachment.getUploadedBy().equals(user)) {
             return true;
         }
@@ -310,7 +387,6 @@ public class TaskAttachmentService {
             return "file_" + UUID.randomUUID().toString().substring(0, 8);
         }
 
-
         String baseName = originalFileName.replaceAll("[^a-zA-Z0-9._-]", "_");
         String extension = "";
 
@@ -319,7 +395,6 @@ public class TaskAttachmentService {
             extension = baseName.substring(lastDot);
             baseName = baseName.substring(0, lastDot);
         }
-
 
         baseName = baseName.substring(0, Math.min(baseName.length(), 50));
         return baseName + "_" + System.currentTimeMillis() + extension;

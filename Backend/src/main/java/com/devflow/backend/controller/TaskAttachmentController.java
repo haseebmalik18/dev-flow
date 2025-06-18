@@ -7,6 +7,7 @@ import com.devflow.backend.service.TaskAttachmentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -87,6 +88,49 @@ public class TaskAttachmentController {
         return ResponseEntity.ok(ApiResponse.success("Download URL generated successfully", response));
     }
 
+
+    @GetMapping("/{id}/preview")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getPreviewUrl(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+        Map<String, Object> previewData = attachmentService.getPreviewData(id, user);
+
+        return ResponseEntity.ok(ApiResponse.success("Preview data generated successfully", previewData));
+    }
+
+
+    @GetMapping("/{id}/stream")
+    public ResponseEntity<byte[]> streamAttachment(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "false") boolean thumbnail,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+
+        try {
+            var streamData = attachmentService.streamAttachment(id, user, thumbnail);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType(streamData.getContentType()));
+            headers.set("Content-Disposition", "inline; filename=\"" + streamData.getFileName() + "\"");
+            headers.setContentLength(streamData.getData().length);
+
+
+            headers.set("X-Content-Type-Options", "nosniff");
+            headers.set("X-Frame-Options", "SAMEORIGIN");
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(streamData.getData());
+
+        } catch (Exception e) {
+            log.error("Failed to stream attachment {}: {}", id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Object>> deleteAttachment(
             @PathVariable Long id,
@@ -143,7 +187,6 @@ public class TaskAttachmentController {
         return ResponseEntity.ok(ApiResponse.success("Attachment search completed successfully", attachments));
     }
 
-
     @PostMapping("/bulk-delete")
     public ResponseEntity<ApiResponse<Map<String, Object>>> bulkDeleteAttachments(
             @RequestBody List<Long> attachmentIds,
@@ -174,13 +217,11 @@ public class TaskAttachmentController {
         return ResponseEntity.ok(ApiResponse.success("Bulk delete operation completed", result));
     }
 
-
     @GetMapping("/admin/validate-files")
     public ResponseEntity<ApiResponse<Map<String, Object>>> validateFiles(
             Authentication authentication) {
 
         User user = (User) authentication.getPrincipal();
-
 
         if (!user.getRole().name().equals("ADMIN")) {
             return ResponseEntity
@@ -188,7 +229,6 @@ public class TaskAttachmentController {
                     .body(ApiResponse.error("Access denied"));
         }
 
-        // This could be implemented to check file integrity, orphaned records, etc.
         Map<String, Object> validationResult = Map.of(
                 "message", "File validation feature not yet implemented",
                 "timestamp", java.time.LocalDateTime.now()

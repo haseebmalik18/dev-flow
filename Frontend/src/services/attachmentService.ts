@@ -55,6 +55,19 @@ export interface UploadResponse {
   error?: string;
 }
 
+export interface PreviewData {
+  id: number;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  fileSizeFormatted: string;
+  isPreviewable: boolean;
+  previewType: "image" | "pdf" | "text" | "code" | "unsupported";
+  streamUrl: string;
+  downloadUrl: string;
+  urlExpiresAt: string;
+}
+
 export const attachmentService = {
   uploadAttachment: async (
     taskId: number,
@@ -84,6 +97,40 @@ export const attachmentService = {
   ): Promise<ApiResponse<AttachmentResponse>> => {
     const response = await api.get(`/attachments/${id}`);
     return response.data;
+  },
+
+  getPreviewData: async (id: number): Promise<ApiResponse<PreviewData>> => {
+    const response = await api.get(`/attachments/${id}/preview`);
+    return response.data;
+  },
+
+  getStreamUrl: (id: number): string => {
+    return `${api.defaults.baseURL}/attachments/${id}/stream`;
+  },
+
+  getThumbnailUrl: (id: number): string => {
+    return `${api.defaults.baseURL}/attachments/${id}/stream?thumbnail=true`;
+  },
+
+  getStreamData: async (
+    id: number,
+    thumbnail: boolean = false
+  ): Promise<Blob> => {
+    const response = await api.get(
+      `/attachments/${id}/stream${thumbnail ? "?thumbnail=true" : ""}`,
+      {
+        responseType: "blob",
+      }
+    );
+    return response.data;
+  },
+
+  getAuthenticatedStreamUrl: async (
+    id: number,
+    thumbnail: boolean = false
+  ): Promise<string> => {
+    const blob = await attachmentService.getStreamData(id, thumbnail);
+    return URL.createObjectURL(blob);
   },
 
   getDownloadUrl: async (
@@ -154,5 +201,59 @@ export const attachmentService = {
   > => {
     const response = await api.post("/attachments/bulk-delete", attachmentIds);
     return response.data;
+  },
+
+  isPreviewableType: (contentType: string): boolean => {
+    const previewableTypes = [
+      // Images
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/svg+xml",
+      // Documents
+      "application/pdf",
+      "text/plain",
+      "text/csv",
+      "application/json",
+      "text/xml",
+      "application/xml",
+      // Code
+      "text/javascript",
+      "text/css",
+      "text/html",
+      "application/javascript",
+    ];
+
+    return previewableTypes.includes(contentType.toLowerCase());
+  },
+
+  getPreviewType: (contentType: string): PreviewData["previewType"] => {
+    const lowerType = contentType.toLowerCase();
+
+    if (lowerType.startsWith("image/")) {
+      return "image";
+    } else if (lowerType === "application/pdf") {
+      return "pdf";
+    } else if (
+      lowerType.startsWith("text/") ||
+      lowerType.includes("json") ||
+      lowerType.includes("xml")
+    ) {
+      return "text";
+    } else if (
+      lowerType.includes("javascript") ||
+      lowerType.includes("css") ||
+      lowerType.includes("html")
+    ) {
+      return "code";
+    }
+
+    return "unsupported";
+  },
+
+  supportsThumbnail: (contentType: string): boolean => {
+    return contentType.toLowerCase().startsWith("image/");
   },
 };
