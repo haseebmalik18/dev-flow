@@ -16,16 +16,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.Set;
-import java.util.Arrays;
 import java.util.HashMap;
 
 @Service
@@ -51,7 +48,6 @@ public class TaskAttachmentService {
     private static final Set<String> PREVIEWABLE_CODE_TYPES = Set.of(
             "text/javascript", "text/css", "text/html", "application/javascript"
     );
-
 
     @lombok.Data
     @lombok.AllArgsConstructor
@@ -115,7 +111,6 @@ public class TaskAttachmentService {
         }
     }
 
-
     public Map<String, Object> getPreviewData(Long attachmentId, User user) {
         TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
 
@@ -132,7 +127,7 @@ public class TaskAttachmentService {
         previewData.put("isPreviewable", isPreviewable(attachment.getContentType()));
         previewData.put("previewType", getPreviewType(attachment.getContentType()));
 
-
+    
         String baseUrl = "http://localhost:3000/api/v1"; // This should come from config
         String streamUrl = String.format("%s/attachments/%d/stream", baseUrl, attachment.getId());
         previewData.put("streamUrl", streamUrl);
@@ -144,16 +139,11 @@ public class TaskAttachmentService {
         return previewData;
     }
 
-    public StreamData streamAttachment(Long attachmentId, User user, boolean thumbnail) throws IOException {
+    public StreamData streamAttachment(Long attachmentId, User user) throws IOException {
         TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
 
 
         byte[] fileData = s3Service.getFileData(attachment.getS3Key());
-
-        if (thumbnail && attachment.isImage()) {
-
-            return new StreamData(fileData, attachment.getContentType(), attachment.getOriginalFileName());
-        }
 
         return new StreamData(fileData, attachment.getContentType(), attachment.getOriginalFileName());
     }
@@ -166,7 +156,6 @@ public class TaskAttachmentService {
                 PREVIEWABLE_DOCUMENT_TYPES.contains(contentType.toLowerCase()) ||
                 PREVIEWABLE_CODE_TYPES.contains(contentType.toLowerCase());
     }
-
 
     private String getPreviewType(String contentType) {
         if (contentType == null) return "unsupported";
@@ -309,7 +298,8 @@ public class TaskAttachmentService {
                 .collect(Collectors.toList());
     }
 
-    @Scheduled(fixedRate = 3600000)
+
+    @Scheduled(fixedRate = 3600000) 
     @Transactional
     public void refreshExpiringUrls() {
         LocalDateTime threshold = LocalDateTime.now().plusHours(2);
@@ -329,7 +319,7 @@ public class TaskAttachmentService {
         }
     }
 
-    @Scheduled(fixedRate = 86400000)
+    @Scheduled(fixedRate = 86400000) 
     @Transactional
     public void cleanupOldDeletedAttachments() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
@@ -337,6 +327,7 @@ public class TaskAttachmentService {
         log.info("Cleaned up old deleted attachments older than {}", cutoff);
     }
 
+ 
     private Task findTaskWithAccess(Long taskId, User user) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new AuthException("Task not found"));
@@ -366,7 +357,7 @@ public class TaskAttachmentService {
         if (task.getCreator().equals(user)) {
             return true;
         }
-        return true;
+        return true; 
     }
 
     private boolean canUserDeleteAttachment(User user, TaskAttachment attachment) {
@@ -430,6 +421,7 @@ public class TaskAttachmentService {
         if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
         return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
+
 
     private AttachmentResponse mapToAttachmentResponse(TaskAttachment attachment) {
         return AttachmentResponse.builder()

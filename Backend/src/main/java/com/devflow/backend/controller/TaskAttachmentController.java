@@ -88,7 +88,6 @@ public class TaskAttachmentController {
         return ResponseEntity.ok(ApiResponse.success("Download URL generated successfully", response));
     }
 
-
     @GetMapping("/{id}/preview")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getPreviewUrl(
             @PathVariable Long id,
@@ -100,23 +99,20 @@ public class TaskAttachmentController {
         return ResponseEntity.ok(ApiResponse.success("Preview data generated successfully", previewData));
     }
 
-
     @GetMapping("/{id}/stream")
     public ResponseEntity<byte[]> streamAttachment(
             @PathVariable Long id,
-            @RequestParam(required = false, defaultValue = "false") boolean thumbnail,
             Authentication authentication) {
 
         User user = (User) authentication.getPrincipal();
 
         try {
-            var streamData = attachmentService.streamAttachment(id, user, thumbnail);
+            var streamData = attachmentService.streamAttachment(id, user);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType(streamData.getContentType()));
             headers.set("Content-Disposition", "inline; filename=\"" + streamData.getFileName() + "\"");
             headers.setContentLength(streamData.getData().length);
-
 
             headers.set("X-Content-Type-Options", "nosniff");
             headers.set("X-Frame-Options", "SAMEORIGIN");
