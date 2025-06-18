@@ -108,38 +108,21 @@ export const attachmentService = {
     return `${api.defaults.baseURL}/attachments/${id}/stream`;
   },
 
-  getThumbnailUrl: (id: number): string => {
-    return `${api.defaults.baseURL}/attachments/${id}/stream?thumbnail=true`;
-  },
-
-  getStreamData: async (
-    id: number,
-    thumbnail: boolean = false
-  ): Promise<Blob> => {
-    const response = await api.get(
-      `/attachments/${id}/stream${thumbnail ? "?thumbnail=true" : ""}`,
-      {
-        responseType: "blob",
-      }
-    );
+  getStreamData: async (id: number): Promise<Blob> => {
+    const response = await api.get(`/attachments/${id}/stream`, {
+      responseType: "blob",
+    });
     return response.data;
   },
 
-  getAuthenticatedStreamUrl: async (
-    id: number,
-    thumbnail: boolean = false
-  ): Promise<string> => {
+  getAuthenticatedStreamUrl: async (id: number): Promise<string> => {
     try {
-      const blob = await attachmentService.getStreamData(id, thumbnail);
+      const blob = await attachmentService.getStreamData(id);
       return URL.createObjectURL(blob);
     } catch (error) {
       console.error("Failed to get authenticated stream URL:", error);
       throw error;
     }
-  },
-
-  getAuthenticatedThumbnailUrl: async (id: number): Promise<string> => {
-    return attachmentService.getAuthenticatedStreamUrl(id, true);
   },
 
   getDownloadUrl: async (
@@ -260,10 +243,6 @@ export const attachmentService = {
     }
 
     return "unsupported";
-  },
-
-  supportsThumbnail: (contentType: string): boolean => {
-    return contentType.toLowerCase().startsWith("image/");
   },
 
   revokeObjectUrl: (url: string): void => {

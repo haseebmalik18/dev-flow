@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Eye,
   Download,
@@ -15,7 +15,6 @@ import { Button } from "../ui/Button";
 import { AttachmentPreview } from "./AttachmentPreview";
 import {
   useAttachmentPreviewUtils,
-  useAttachmentThumbnail,
   useCleanupObjectUrls,
 } from "../../hooks/useAttachments";
 import {
@@ -41,17 +40,7 @@ export const AttachmentThumbnail: React.FC<AttachmentThumbnailProps> = ({
   className = "",
 }) => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const { isPreviewable, getPreviewType, supportsThumbnail } =
-    useAttachmentPreviewUtils();
-  const { cleanupAttachmentUrls } = useCleanupObjectUrls();
-
-  const shouldLoadThumbnail =
-    attachment.isImage && supportsThumbnail(attachment.contentType);
-  const {
-    data: thumbnailUrl,
-    isLoading: isLoadingThumbnail,
-    error: thumbnailError,
-  } = useAttachmentThumbnail(attachment.id, shouldLoadThumbnail);
+  const { isPreviewable, getPreviewType } = useAttachmentPreviewUtils();
 
   const sizeClasses = {
     sm: "w-16 h-16",
@@ -65,20 +54,8 @@ export const AttachmentThumbnail: React.FC<AttachmentThumbnailProps> = ({
     lg: "w-12 h-12",
   };
 
-  useEffect(() => {
-    return () => {
-      if (shouldLoadThumbnail) {
-        cleanupAttachmentUrls(attachment.id);
-      }
-    };
-  }, [attachment.id, shouldLoadThumbnail, cleanupAttachmentUrls]);
-
   const getFileIcon = () => {
     const iconSize = iconSizeClasses[size];
-
-    if (attachment.isImage && (thumbnailUrl || isLoadingThumbnail)) {
-      return null;
-    }
 
     if (attachment.isImage) {
       return <ImageIcon className={`${iconSize} text-blue-500`} />;
@@ -151,40 +128,6 @@ export const AttachmentThumbnail: React.FC<AttachmentThumbnailProps> = ({
   };
 
   const renderThumbnailContent = () => {
-    if (shouldLoadThumbnail) {
-      if (isLoadingThumbnail) {
-        return (
-          <div className="flex items-center justify-center w-full h-full bg-gray-100">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        );
-      }
-
-      if (thumbnailUrl && !thumbnailError) {
-        return (
-          <img
-            src={thumbnailUrl as string}
-            alt={attachment.originalFileName}
-            className="w-full h-full object-cover"
-            onError={() => {
-              console.error(
-                "Failed to load thumbnail image for:",
-                attachment.originalFileName
-              );
-            }}
-          />
-        );
-      }
-
-      if (thumbnailError) {
-        return (
-          <div className="flex items-center justify-center w-full h-full bg-gray-100">
-            <AlertCircle className={`${iconSizeClasses[size]} text-gray-400`} />
-          </div>
-        );
-      }
-    }
-
     return (
       <div className="flex items-center justify-center w-full h-full">
         {getFileIcon()}

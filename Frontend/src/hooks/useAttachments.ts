@@ -34,30 +34,10 @@ export const useAttachmentPreview = (id: number, enabled: boolean = true) => {
   });
 };
 
-export const useAttachmentThumbnail = (id: number, enabled: boolean = true) => {
+export const useAttachmentStreamUrl = (id: number, enabled: boolean = true) => {
   return useQuery({
-    queryKey: ["attachment", "thumbnail", id],
-    queryFn: () => attachmentService.getAuthenticatedThumbnailUrl(id),
-    enabled: !!id && enabled,
-    staleTime: 10 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (error && (error as any).response?.status === 401) {
-        return false;
-      }
-      return failureCount < 2;
-    },
-  });
-};
-
-export const useAttachmentStreamUrl = (
-  id: number,
-  thumbnail: boolean = false,
-  enabled: boolean = true
-) => {
-  return useQuery({
-    queryKey: ["attachment", "stream", id, thumbnail],
-    queryFn: () => attachmentService.getAuthenticatedStreamUrl(id, thumbnail),
+    queryKey: ["attachment", "stream", id],
+    queryFn: () => attachmentService.getAuthenticatedStreamUrl(id),
     enabled: !!id && enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
@@ -125,15 +105,9 @@ export const useDeleteAttachment = () => {
         queryKey: ["attachment", "preview", attachmentId],
       });
       queryClient.invalidateQueries({
-        queryKey: ["attachment", "thumbnail", attachmentId],
-      });
-      queryClient.invalidateQueries({
         queryKey: ["attachment", "stream", attachmentId],
       });
 
-      queryClient.removeQueries({
-        queryKey: ["attachment", "thumbnail", attachmentId],
-      });
       queryClient.removeQueries({
         queryKey: ["attachment", "stream", attachmentId],
       });
@@ -195,8 +169,6 @@ export const useAttachmentPreviewUtils = () => {
       attachmentService.isPreviewableType(contentType),
     getPreviewType: (contentType: string) =>
       attachmentService.getPreviewType(contentType),
-    supportsThumbnail: (contentType: string) =>
-      attachmentService.supportsThumbnail(contentType),
   };
 };
 
@@ -204,28 +176,16 @@ export const useCleanupObjectUrls = () => {
   const queryClient = useQueryClient();
 
   const cleanupAttachmentUrls = (attachmentId: number) => {
-    const thumbnailData = queryClient.getQueryData([
-      "attachment",
-      "thumbnail",
-      attachmentId,
-    ]);
     const streamData = queryClient.getQueryData([
       "attachment",
       "stream",
       attachmentId,
     ]);
 
-    if (thumbnailData && typeof thumbnailData === "string") {
-      attachmentService.revokeObjectUrl(thumbnailData);
-    }
-
     if (streamData && typeof streamData === "string") {
       attachmentService.revokeObjectUrl(streamData);
     }
 
-    queryClient.removeQueries({
-      queryKey: ["attachment", "thumbnail", attachmentId],
-    });
     queryClient.removeQueries({
       queryKey: ["attachment", "stream", attachmentId],
     });
@@ -237,10 +197,7 @@ export const useCleanupObjectUrls = () => {
 
     queries.forEach((query) => {
       const [type, subtype] = query.queryKey;
-      if (
-        type === "attachment" &&
-        (subtype === "thumbnail" || subtype === "stream")
-      ) {
+      if (type === "attachment" && subtype === "stream") {
         const data = query.state.data;
         if (data && typeof data === "string") {
           attachmentService.revokeObjectUrl(data);
@@ -251,10 +208,7 @@ export const useCleanupObjectUrls = () => {
     queryClient.removeQueries({
       predicate: (query) => {
         const [type, subtype] = query.queryKey;
-        return (
-          type === "attachment" &&
-          (subtype === "thumbnail" || subtype === "stream")
-        );
+        return type === "attachment" && subtype === "stream";
       },
     });
   };
