@@ -129,8 +129,17 @@ export const attachmentService = {
     id: number,
     thumbnail: boolean = false
   ): Promise<string> => {
-    const blob = await attachmentService.getStreamData(id, thumbnail);
-    return URL.createObjectURL(blob);
+    try {
+      const blob = await attachmentService.getStreamData(id, thumbnail);
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error("Failed to get authenticated stream URL:", error);
+      throw error;
+    }
+  },
+
+  getAuthenticatedThumbnailUrl: async (id: number): Promise<string> => {
+    return attachmentService.getAuthenticatedStreamUrl(id, true);
   },
 
   getDownloadUrl: async (
@@ -255,5 +264,13 @@ export const attachmentService = {
 
   supportsThumbnail: (contentType: string): boolean => {
     return contentType.toLowerCase().startsWith("image/");
+  },
+
+  revokeObjectUrl: (url: string): void => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn("Failed to revoke object URL:", error);
+    }
   },
 };
