@@ -10,8 +10,12 @@ import {
   Clock,
   Loader2,
   AlertTriangle,
+  Wifi,
+  WifiOff,
+  Circle,
 } from "lucide-react";
 import { useRecentActivity } from "../../hooks/useDashboard";
+import { useRealtimeActivity } from "../../hooks/useRealtimeActivity";
 import type { ActivityItem } from "../../services/dashboardService";
 
 const ActivityIcon: React.FC<{ type: string }> = ({ type }) => {
@@ -59,9 +63,10 @@ const getActivityColor = (type: string) => {
   }
 };
 
-const ActivityItemComponent: React.FC<{ activity: ActivityItem }> = ({
-  activity,
-}) => {
+const ActivityItemComponent: React.FC<{
+  activity: ActivityItem;
+  isNew?: boolean;
+}> = ({ activity, isNew = false }) => {
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -82,7 +87,11 @@ const ActivityItemComponent: React.FC<{ activity: ActivityItem }> = ({
   };
 
   return (
-    <div className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
+    <div
+      className={`flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors ${
+        isNew ? "bg-blue-50 border-l-4 border-blue-400" : ""
+      }`}
+    >
       <div className="flex-shrink-0">
         <div className="relative">
           {activity.user.avatar ? (
@@ -103,6 +112,9 @@ const ActivityItemComponent: React.FC<{ activity: ActivityItem }> = ({
           >
             <ActivityIcon type={activity.type} />
           </div>
+          {isNew && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+          )}
         </div>
       </div>
 
@@ -123,6 +135,11 @@ const ActivityItemComponent: React.FC<{ activity: ActivityItem }> = ({
           <span className="text-xs text-gray-500">
             {formatTime(activity.createdAt)}
           </span>
+          {isNew && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+              New
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -144,6 +161,23 @@ const ActivityItemSkeleton: React.FC = () => (
 
 export const RecentActivity: React.FC = () => {
   const { data: activities, isLoading, error } = useRecentActivity();
+  const { hasNewActivity, markAsRead, isConnected, realtimeActivities } =
+    useRealtimeActivity();
+
+  const allActivities = React.useMemo(() => {
+    if (!activities) return realtimeActivities;
+
+    const activityIds = new Set(activities.map((a) => a.id));
+    const newRealtimeActivities = realtimeActivities.filter(
+      (ra) => !activityIds.has(ra.id)
+    );
+
+    return [...newRealtimeActivities, ...activities];
+  }, [activities, realtimeActivities]);
+
+  const handleMarkAsRead = () => {
+    markAsRead();
+  };
 
   if (error) {
     return (
@@ -174,6 +208,38 @@ export const RecentActivity: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900">
             Recent Activity
           </h2>
+
+          {/* Connection Status Indicator */}
+          <div className="flex items-center space-x-1">
+            {isConnected ? (
+              <div
+                className="flex items-center space-x-1 text-green-600"
+                title="Real-time updates active"
+              >
+                <Wifi className="w-4 h-4" />
+                <Circle className="w-2 h-2 fill-current animate-pulse" />
+              </div>
+            ) : (
+              <div
+                className="flex items-center space-x-1 text-gray-400"
+                title="Real-time updates disconnected"
+              >
+                <WifiOff className="w-4 h-4" />
+              </div>
+            )}
+          </div>
+
+          {/* New Activity Indicator */}
+          {hasNewActivity && (
+            <button
+              onClick={handleMarkAsRead}
+              className="flex items-center space-x-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium hover:bg-blue-200 transition-colors"
+              title="New activity available"
+            >
+              <Circle className="w-2 h-2 fill-current animate-pulse" />
+              <span>New</span>
+            </button>
+          )}
         </div>
         <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
           View All
@@ -185,9 +251,13 @@ export const RecentActivity: React.FC = () => {
           Array.from({ length: 8 }).map((_, index) => (
             <ActivityItemSkeleton key={index} />
           ))
-        ) : activities && activities.length > 0 ? (
-          activities.map((activity) => (
-            <ActivityItemComponent key={activity.id} activity={activity} />
+        ) : allActivities && allActivities.length > 0 ? (
+          allActivities.map((activity, index) => (
+            <ActivityItemComponent
+              key={`${activity.id}-${index}`}
+              activity={activity}
+              isNew={index < realtimeActivities.length}
+            />
           ))
         ) : (
           <div className="text-center py-8">
@@ -202,7 +272,7 @@ export const RecentActivity: React.FC = () => {
         )}
       </div>
 
-      {activities && activities.length > 0 && (
+      {allActivities && allActivities.length > 0 && (
         <div className="mt-4 pt-4 border-t border-gray-100">
           <div className="text-center">
             <button className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
