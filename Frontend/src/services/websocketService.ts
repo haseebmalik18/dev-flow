@@ -1,4 +1,6 @@
+import { Client, StompConfig, type Message } from "@stomp/stompjs";
 import { useAuthStore } from "../hooks/useAuthStore";
+import { getWebSocketConfig, websocketConfig } from "../config/websocket";
 
 export interface ActivityUpdate {
   id: number;
@@ -27,114 +29,107 @@ export interface WebSocketMessage {
   subscription?: string;
 }
 
-class NativeWebSocketService {
-  private ws: WebSocket | null = null;
+class StompWebSocketService {
+  private client: Client | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private isConnecting = false;
-  private heartbeatInterval: NodeJS.Timeout | null = null;
-  private subscriptions: Set<string> = new Set();
+  private subscriptions: Map<string, any> = new Map();
   private activityCallbacks: Set<(activity: ActivityUpdate) => void> =
     new Set();
   private connectionCallbacks: Set<(connected: boolean) => void> = new Set();
 
-  constructor() {}
+  constructor() {
+    this.setupClient();
+  }
+
+  private setupClient(): void {
+    const config = getWebSocketConfig();
+
+    const stompConfig: StompConfig = {
+      brokerURL: config.url,
+
+      webSocketFactory: () => {
+        return new WebSocket(config.url);
+      },
+
+      connectHeaders: this.getAuthHeaders(),
+
+      debug: (str: string) => {
+        if (process.env.NODE_ENV === "development") {
+          console.log("STOMP Debug:", str);
+        }
+      },
+
+      reconnectDelay: config.reconnectDelay,
+      heartbeatIncoming: config.heartbeatIncoming,
+      heartbeatOutgoing: config.heartbeatOutgoing,
+
+      onConnect: this.onConnect.bind(this),
+      onDisconnect: this.onDisconnect.bind(this),
+      onStompError: this.onStompError.bind(this),
+      onWebSocketError: this.onWebSocketError.bind(this),
+      onWebSocketClose: this.onWebSocketClose.bind(this),
+    };
+
+    this.client = new Client(stompConfig);
+  }
 
   private getWsUrl(): string {
-    const WS_URL = "ws://localhost:3000/ws";
-    return WS_URL;
+    return getWebSocketConfig().url;
   }
 
-  public connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) {
-      return;
+  private getAuthHeaders(): Record<string, string> {
+    const token = useAuthStore.getState().token;
+    const headers: Record<string, string> = {};
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
-    this.isConnecting = true;
-
-    try {
-      const wsUrl = this.getWsUrl();
-      console.log("Connecting to WebSocket:", wsUrl);
-
-      this.ws = new WebSocket(wsUrl);
-
-      const token = useAuthStore.getState().token;
-      if (token) {
-        this.ws.addEventListener("open", () => {
-          this.sendAuthMessage(token);
-        });
-      }
-
-      this.ws.onopen = this.onOpen.bind(this);
-      this.ws.onmessage = this.onMessage.bind(this);
-      this.ws.onclose = this.onClose.bind(this);
-      this.ws.onerror = this.onError.bind(this);
-    } catch (error) {
-      console.error("Failed to create WebSocket connection:", error);
-      this.onError(error as Event);
-    }
+    return headers;
   }
 
-  private sendAuthMessage(token: string): void {
-    this.send({
-      type: "AUTH",
-      data: { token: `Bearer ${token}` },
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  private onOpen(): void {
-    console.log("WebSocket connected");
+  private onConnect(): void {
+    console.log("STOMP WebSocket connected");
     this.isConnecting = false;
     this.reconnectAttempts = 0;
     this.notifyConnectionStatus(true);
 
-    this.startHeartbeat();
     this.resubscribeAll();
+
     this.subscribeToGlobalActivities();
   }
 
-  private onMessage(event: MessageEvent): void {
-    try {
-      const message: WebSocketMessage = JSON.parse(event.data);
-
-      switch (message.type) {
-        case "ACTIVITY_UPDATE":
-          this.handleActivityUpdate(message.data);
-          break;
-        case "CONNECTION_STATUS":
-          console.log("Connection status:", message.data);
-          break;
-        case "HEARTBEAT":
-          break;
-        default:
-          console.log("Unknown message type:", message.type, message);
-      }
-    } catch (error) {
-      console.error("Failed to parse WebSocket message:", error);
-    }
+  private onDisconnect(): void {
+    console.log("STOMP WebSocket disconnected");
+    this.notifyConnectionStatus(false);
+    this.clearSubscriptions();
   }
 
-  private onClose(event: CloseEvent): void {
-    console.log("WebSocket disconnected:", event.code, event.reason);
+  private onStompError(frame: any): void {
+    console.error("STOMP error:", frame);
+    this.notifyConnectionStatus(false);
+  }
+
+  private onWebSocketError(error: Event): void {
+    console.error("WebSocket error:", error);
     this.isConnecting = false;
     this.notifyConnectionStatus(false);
-    this.stopHeartbeat();
+  }
+
+  private onWebSocketClose(event: CloseEvent): void {
+    console.log("WebSocket closed:", event.code, event.reason);
+    this.isConnecting = false;
+    this.notifyConnectionStatus(false);
 
     if (
       event.code !== 1000 &&
-      event.code !== 1008 &&
       this.reconnectAttempts < this.maxReconnectAttempts
     ) {
       this.attemptReconnect();
     }
-  }
-
-  private onError(error: Event): void {
-    console.error("WebSocket error:", error);
-    this.isConnecting = false;
-    this.notifyConnectionStatus(false);
   }
 
   private attemptReconnect(): void {
@@ -150,160 +145,220 @@ class NativeWebSocketService {
     }, this.reconnectDelay * this.reconnectAttempts);
   }
 
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-
-    this.heartbeatInterval = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.send({
-          type: "HEARTBEAT",
-          data: { userId: useAuthStore.getState().user?.id },
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }, 30000);
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-  }
-
-  private send(message: WebSocketMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    } else {
-      console.warn("WebSocket not connected, cannot send message:", message);
-    }
-  }
-
   private resubscribeAll(): void {
-    this.subscriptions.forEach((subscription) => {
-      this.send({
-        type: "SUBSCRIBE",
-        data: { subscription },
-        timestamp: new Date().toISOString(),
-      });
+    const subscriptionKeys = Array.from(this.subscriptions.keys());
+
+    this.subscriptions.clear();
+
+    subscriptionKeys.forEach((destination) => {
+      if (destination === websocketConfig.destinations.globalActivities) {
+        this.subscribeToGlobalActivities();
+      } else if (destination.startsWith("/topic/activities/project/")) {
+        const projectId = parseInt(destination.split("/").pop() || "0");
+        if (projectId > 0) {
+          this.subscribeToProjectActivities(projectId);
+        }
+      } else if (destination.startsWith("/topic/activities/task/")) {
+        const taskId = parseInt(destination.split("/").pop() || "0");
+        if (taskId > 0) {
+          this.subscribeToTaskActivities(taskId);
+        }
+      } else if (destination.startsWith("/topic/notifications/user/")) {
+        this.subscribeToUserNotifications();
+      } else if (destination.startsWith("/topic/teams/")) {
+        const teamId = parseInt(destination.split("/")[2] || "0");
+        if (teamId > 0) {
+          this.subscribeToTeamUpdates(teamId);
+        }
+      }
     });
   }
 
-  private handleActivityUpdate(activity: ActivityUpdate): void {
-    localStorage.setItem("lastActivitySeen", new Date().toISOString());
-    this.activityCallbacks.forEach((callback) => callback(activity));
+  private clearSubscriptions(): void {
+    this.subscriptions.forEach((subscription) => {
+      if (subscription && subscription.unsubscribe) {
+        subscription.unsubscribe();
+      }
+    });
+    this.subscriptions.clear();
+  }
+
+  private handleActivityMessage(message: Message): void {
+    try {
+      const activity: ActivityUpdate = JSON.parse(message.body);
+
+      localStorage.setItem("lastActivitySeen", new Date().toISOString());
+
+      this.activityCallbacks.forEach((callback) => callback(activity));
+    } catch (error) {
+      console.error("Failed to parse activity message:", error);
+    }
   }
 
   private notifyConnectionStatus(connected: boolean): void {
     this.connectionCallbacks.forEach((callback) => callback(connected));
   }
 
-  public subscribeToGlobalActivities(): void {
-    const subscription = "global-activities";
-
-    if (this.subscriptions.has(subscription)) {
+  public connect(): void {
+    if (this.isConnected() || this.isConnecting) {
       return;
     }
 
-    this.subscriptions.add(subscription);
+    this.isConnecting = true;
 
-    this.send({
-      type: "SUBSCRIBE",
-      data: {
-        subscription: "global",
-        lastSeen:
-          localStorage.getItem("lastActivitySeen") || new Date().toISOString(),
-      },
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  public subscribeToProjectActivities(projectId: number): void {
-    const subscription = `project-${projectId}`;
-
-    this.subscriptions.forEach((sub) => {
-      if (sub.startsWith("project-") && sub !== subscription) {
-        this.unsubscribeFromProject(parseInt(sub.split("-")[1]));
-      }
-    });
-
-    this.subscriptions.add(subscription);
-
-    this.send({
-      type: "SUBSCRIBE",
-      data: {
-        subscription: `project-${projectId}`,
-        lastSeen:
-          localStorage.getItem(`lastActivitySeen-project-${projectId}`) ||
-          new Date().toISOString(),
-      },
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  public subscribeToTaskActivities(taskId: number): void {
-    const subscription = `task-${taskId}`;
-
-    this.subscriptions.forEach((sub) => {
-      if (sub.startsWith("task-") && sub !== subscription) {
-        this.unsubscribeFromTask(parseInt(sub.split("-")[1]));
-      }
-    });
-
-    this.subscriptions.add(subscription);
-
-    this.send({
-      type: "SUBSCRIBE",
-      data: {
-        subscription: `task-${taskId}`,
-        lastSeen:
-          localStorage.getItem(`lastActivitySeen-task-${taskId}`) ||
-          new Date().toISOString(),
-      },
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  public unsubscribeFromProject(projectId: number): void {
-    const subscription = `project-${projectId}`;
-
-    if (this.subscriptions.has(subscription)) {
-      this.subscriptions.delete(subscription);
-
-      this.send({
-        type: "UNSUBSCRIBE",
-        data: { subscription: `project-${projectId}` },
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }
-
-  public unsubscribeFromTask(taskId: number): void {
-    const subscription = `task-${taskId}`;
-
-    if (this.subscriptions.has(subscription)) {
-      this.subscriptions.delete(subscription);
-
-      this.send({
-        type: "UNSUBSCRIBE",
-        data: { subscription: `task-${taskId}` },
-        timestamp: new Date().toISOString(),
-      });
+    if (this.client) {
+      this.client.connectHeaders = this.getAuthHeaders();
+      this.client.activate();
     }
   }
 
   public disconnect(): void {
-    this.stopHeartbeat();
-    this.subscriptions.clear();
+    this.clearSubscriptions();
+    this.reconnectAttempts = this.maxReconnectAttempts;
 
-    if (this.ws) {
-      this.ws.close(1000, "Client disconnecting");
-      this.ws = null;
+    if (this.client) {
+      this.client.deactivate();
     }
 
     this.activityCallbacks.clear();
     this.connectionCallbacks.clear();
-    this.reconnectAttempts = this.maxReconnectAttempts;
+  }
+
+  public subscribeToGlobalActivities(): void {
+    if (!this.isConnected()) {
+      console.warn("Cannot subscribe - not connected");
+      return;
+    }
+
+    const destination = websocketConfig.destinations.globalActivities;
+
+    if (this.subscriptions.has(destination)) {
+      return;
+    }
+
+    const subscription = this.client!.subscribe(
+      destination,
+      (message: Message) => {
+        this.handleActivityMessage(message);
+      }
+    );
+
+    this.subscriptions.set(destination, subscription);
+    console.log("Subscribed to global activities");
+  }
+
+  public subscribeToProjectActivities(projectId: number): void {
+    if (!this.isConnected()) {
+      console.warn("Cannot subscribe - not connected");
+      return;
+    }
+
+    const destination =
+      websocketConfig.destinations.projectActivities(projectId);
+
+    this.subscriptions.forEach((subscription, dest) => {
+      if (
+        dest.startsWith("/topic/activities/project/") &&
+        dest !== destination
+      ) {
+        subscription.unsubscribe();
+        this.subscriptions.delete(dest);
+      }
+    });
+
+    if (this.subscriptions.has(destination)) {
+      return;
+    }
+
+    const subscription = this.client!.subscribe(
+      destination,
+      (message: Message) => {
+        this.handleActivityMessage(message);
+      }
+    );
+
+    this.subscriptions.set(destination, subscription);
+    console.log(`Subscribed to project ${projectId} activities`);
+
+    localStorage.setItem(
+      `lastActivitySeen-project-${projectId}`,
+      new Date().toISOString()
+    );
+  }
+
+  public subscribeToTaskActivities(taskId: number): void {
+    if (!this.isConnected()) {
+      console.warn("Cannot subscribe - not connected");
+      return;
+    }
+
+    const destination = websocketConfig.destinations.taskActivities(taskId);
+
+    this.subscriptions.forEach((subscription, dest) => {
+      if (dest.startsWith("/topic/activities/task/") && dest !== destination) {
+        subscription.unsubscribe();
+        this.subscriptions.delete(dest);
+      }
+    });
+
+    if (this.subscriptions.has(destination)) {
+      return;
+    }
+
+    const subscription = this.client!.subscribe(
+      destination,
+      (message: Message) => {
+        this.handleActivityMessage(message);
+      }
+    );
+
+    this.subscriptions.set(destination, subscription);
+    console.log(`Subscribed to task ${taskId} activities`);
+
+    localStorage.setItem(
+      `lastActivitySeen-task-${taskId}`,
+      new Date().toISOString()
+    );
+  }
+
+  public unsubscribeFromProject(projectId: number): void {
+    const destination =
+      websocketConfig.destinations.projectActivities(projectId);
+    const subscription = this.subscriptions.get(destination);
+
+    if (subscription) {
+      subscription.unsubscribe();
+      this.subscriptions.delete(destination);
+      console.log(`Unsubscribed from project ${projectId} activities`);
+    }
+  }
+
+  public unsubscribeFromTask(taskId: number): void {
+    const destination = websocketConfig.destinations.taskActivities(taskId);
+    const subscription = this.subscriptions.get(destination);
+
+    if (subscription) {
+      subscription.unsubscribe();
+      this.subscriptions.delete(destination);
+      console.log(`Unsubscribed from task ${taskId} activities`);
+    }
+  }
+
+  public sendMessage(
+    destination: string,
+    body: any,
+    headers: Record<string, string> = {}
+  ): void {
+    if (!this.isConnected()) {
+      console.warn("Cannot send message - not connected");
+      return;
+    }
+
+    this.client!.publish({
+      destination,
+      body: JSON.stringify(body),
+      headers,
+    });
   }
 
   public onActivityUpdate(
@@ -327,7 +382,7 @@ class NativeWebSocketService {
   }
 
   public isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
+    return this.client?.connected ?? false;
   }
 
   public getConnectionState():
@@ -336,10 +391,73 @@ class NativeWebSocketService {
     | "disconnected"
     | "error" {
     if (this.isConnecting) return "connecting";
-    if (this.ws?.readyState === WebSocket.OPEN) return "connected";
-    if (this.ws?.readyState === WebSocket.CONNECTING) return "connecting";
+    if (this.isConnected()) return "connected";
     return "disconnected";
+  }
+
+  public subscribeToUserNotifications(): void {
+    if (!this.isConnected()) {
+      console.warn("Cannot subscribe - not connected");
+      return;
+    }
+
+    const user = useAuthStore.getState().user;
+    if (!user) {
+      console.warn("No user found for notifications subscription");
+      return;
+    }
+
+    const destination = websocketConfig.destinations.userNotifications(user.id);
+
+    if (this.subscriptions.has(destination)) {
+      return;
+    }
+
+    const subscription = this.client!.subscribe(
+      destination,
+      (message: Message) => {
+        try {
+          const notification = JSON.parse(message.body);
+          console.log("Received notification:", notification);
+        } catch (error) {
+          console.error("Failed to parse notification:", error);
+        }
+      }
+    );
+
+    this.subscriptions.set(destination, subscription);
+    console.log(`Subscribed to user ${user.id} notifications`);
+  }
+
+  public subscribeToTeamUpdates(teamId: number): void {
+    if (!this.isConnected()) {
+      console.warn("Cannot subscribe - not connected");
+      return;
+    }
+
+    const destination = websocketConfig.destinations.teamUpdates(teamId);
+
+    if (this.subscriptions.has(destination)) {
+      return;
+    }
+
+    const subscription = this.client!.subscribe(
+      destination,
+      (message: Message) => {
+        try {
+          const update = JSON.parse(message.body);
+          console.log("Received team update:", update);
+        } catch (error) {
+          console.error("Failed to parse team update:", error);
+        }
+      }
+    );
+
+    this.subscriptions.set(destination, subscription);
+    console.log(`Subscribed to team ${teamId} updates`);
   }
 }
 
-export const websocketService = new NativeWebSocketService();
+export const websocketService = new StompWebSocketService();
+
+export { StompWebSocketService };

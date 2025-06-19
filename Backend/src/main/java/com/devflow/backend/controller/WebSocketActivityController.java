@@ -10,6 +10,7 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -28,19 +29,27 @@ import java.util.concurrent.ConcurrentHashMap;
 public class WebSocketActivityController {
 
     private final RealtimeActivityService realtimeActivityService;
+    private final SimpMessagingTemplate messagingTemplate;
 
 
     private final Map<String, SessionInfo> activeSessions = new ConcurrentHashMap<>();
 
-
-    @MessageMapping("/activities/subscribe/global")
+    @MessageMapping("/subscribe/global")
     @SendToUser("/queue/activities/response")
     public SubscriptionResponse subscribeToGlobalActivities(
-            @Payload SubscriptionRequest request,
+            @Payload(required = false) SubscriptionRequest request,
             SimpMessageHeaderAccessor headerAccessor,
             Principal principal) {
 
         try {
+            if (principal == null) {
+                log.warn("No authenticated principal found for global subscription");
+                return SubscriptionResponse.builder()
+                        .status("error")
+                        .message("Authentication required")
+                        .build();
+            }
+
             User user = (User) ((Authentication) principal).getPrincipal();
             String sessionId = headerAccessor.getSessionId();
 
@@ -53,8 +62,7 @@ public class WebSocketActivityController {
 
             SubscriptionResponse response = realtimeActivityService.subscribeToGlobalActivities(user, sessionId);
 
-
-            if (request.getLastSeen() != null) {
+            if (request != null && request.getLastSeen() != null) {
                 sendRecentActivities(user, "global", null, request.getLastSeen(), sessionId);
             }
 
@@ -69,17 +77,22 @@ public class WebSocketActivityController {
         }
     }
 
-
-
-    @MessageMapping("/activities/subscribe/project/{projectId}")
+    @MessageMapping("/subscribe/project/{projectId}")
     @SendToUser("/queue/activities/response")
     public SubscriptionResponse subscribeToProjectActivities(
             @DestinationVariable Long projectId,
-            @Payload SubscriptionRequest request,
+            @Payload(required = false) SubscriptionRequest request,
             SimpMessageHeaderAccessor headerAccessor,
             Principal principal) {
 
         try {
+            if (principal == null) {
+                return SubscriptionResponse.builder()
+                        .status("error")
+                        .message("Authentication required")
+                        .build();
+            }
+
             User user = (User) ((Authentication) principal).getPrincipal();
             String sessionId = headerAccessor.getSessionId();
 
@@ -88,11 +101,9 @@ public class WebSocketActivityController {
 
             activeSessions.put(sessionId, new SessionInfo(user.getId(), sessionId, LocalDateTime.now()));
 
-
             SubscriptionResponse response = realtimeActivityService.subscribeToProjectActivities(user, projectId, sessionId);
 
-
-            if (request.getLastSeen() != null) {
+            if (request != null && request.getLastSeen() != null) {
                 sendRecentActivities(user, "project", projectId, request.getLastSeen(), sessionId);
             }
 
@@ -107,110 +118,20 @@ public class WebSocketActivityController {
         }
     }
 
-    @MessageMapping("/activities/subscribe/task/{taskId}")
-    @SendToUser("/queue/activities/response")
-    public SubscriptionResponse subscribeToTaskActivities(
-            @DestinationVariable Long taskId,
-            @Payload SubscriptionRequest request,
-            SimpMessageHeaderAccessor headerAccessor,
-            Principal principal) {
-
-        try {
-            User user = (User) ((Authentication) principal).getPrincipal();
-            String sessionId = headerAccessor.getSessionId();
-
-            log.info("User {} subscribing to task {} activities from session {}",
-                    user.getUsername(), taskId, sessionId);
-
-
-            activeSessions.put(sessionId, new SessionInfo(user.getId(), sessionId, LocalDateTime.now()));
-
-
-            SubscriptionResponse response = realtimeActivityService.subscribeToTaskActivities(user, taskId, sessionId);
-
-
-            if (request.getLastSeen() != null) {
-                sendRecentActivities(user, "task", taskId, request.getLastSeen(), sessionId);
-            }
-
-            return response;
-
-        } catch (Exception e) {
-            log.error("Failed to subscribe to task {} activities: {}", taskId, e.getMessage(), e);
-            return SubscriptionResponse.builder()
-                    .status("error")
-                    .message("Failed to subscribe: " + e.getMessage())
-                    .build();
-        }
-    }
-
-
-
-    @MessageMapping("/activities/unsubscribe/{subscriptionId}")
-    @SendToUser("/queue/activities/response")
-    public SubscriptionResponse unsubscribeFromActivities(
-            @DestinationVariable String subscriptionId,
-            Principal principal) {
-
-        try {
-            User user = (User) ((Authentication) principal).getPrincipal();
-
-            log.info("User {} unsubscribing from {}", user.getUsername(), subscriptionId);
-
-            realtimeActivityService.unsubscribe(subscriptionId);
-
-            return SubscriptionResponse.builder()
-                    .status("success")
-                    .message("Unsubscribed successfully")
-                    .subscriptionId(subscriptionId)
-                    .build();
-
-        } catch (Exception e) {
-            log.error("Failed to unsubscribe from {}: {}", subscriptionId, e.getMessage(), e);
-            return SubscriptionResponse.builder()
-                    .status("error")
-                    .message("Failed to unsubscribe: " + e.getMessage())
-                    .subscriptionId(subscriptionId)
-                    .build();
-        }
-    }
-
-
-    @MessageMapping("/activities/recent/{scope}")
-    @SendToUser("/queue/activities/recent")
-    public List<ActivityBroadcast> getRecentActivities(
-            @DestinationVariable String scope,
-            @Payload Map<String, Object> request,
-            Principal principal) {
-
-        try {
-            User user = (User) ((Authentication) principal).getPrincipal();
-
-            Long entityId = request.get("entityId") != null ?
-                    Long.valueOf(request.get("entityId").toString()) : null;
-            LocalDateTime since = request.get("since") != null ?
-                    LocalDateTime.parse(request.get("since").toString()) : LocalDateTime.now().minusHours(24);
-
-            log.debug("User {} requesting recent {} activities since {}",
-                    user.getUsername(), scope, since);
-
-            return realtimeActivityService.getRecentActivities(user, scope, entityId, since);
-
-        } catch (Exception e) {
-            log.error("Failed to get recent activities: {}", e.getMessage(), e);
-            return List.of();
-        }
-    }
-
-
-    @MessageMapping("/activities/heartbeat")
+    @MessageMapping("/heartbeat")
     @SendToUser("/queue/activities/heartbeat")
     public HeartbeatMessage heartbeat(
-            @Payload HeartbeatMessage message,
+            @Payload(required = false) HeartbeatMessage message,
             SimpMessageHeaderAccessor headerAccessor,
             Principal principal) {
 
         try {
+            if (principal == null) {
+                return HeartbeatMessage.builder()
+                        .timestamp(LocalDateTime.now())
+                        .build();
+            }
+
             User user = (User) ((Authentication) principal).getPrincipal();
             String sessionId = headerAccessor.getSessionId();
 
@@ -234,6 +155,41 @@ public class WebSocketActivityController {
         }
     }
 
+    @MessageMapping("/unsubscribe/{subscriptionId}")
+    @SendToUser("/queue/activities/response")
+    public SubscriptionResponse unsubscribeFromActivities(
+            @DestinationVariable String subscriptionId,
+            Principal principal) {
+
+        try {
+            if (principal == null) {
+                return SubscriptionResponse.builder()
+                        .status("error")
+                        .message("Authentication required")
+                        .build();
+            }
+
+            User user = (User) ((Authentication) principal).getPrincipal();
+
+            log.info("User {} unsubscribing from {}", user.getUsername(), subscriptionId);
+
+            realtimeActivityService.unsubscribe(subscriptionId);
+
+            return SubscriptionResponse.builder()
+                    .status("success")
+                    .message("Unsubscribed successfully")
+                    .subscriptionId(subscriptionId)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Failed to unsubscribe from {}: {}", subscriptionId, e.getMessage(), e);
+            return SubscriptionResponse.builder()
+                    .status("error")
+                    .message("Failed to unsubscribe: " + e.getMessage())
+                    .subscriptionId(subscriptionId)
+                    .build();
+        }
+    }
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectEvent event) {
@@ -252,7 +208,6 @@ public class WebSocketActivityController {
 
     }
 
-
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         String sessionId = event.getSessionId();
@@ -266,15 +221,17 @@ public class WebSocketActivityController {
         }
     }
 
-
     private void sendRecentActivities(User user, String scope, Long entityId, LocalDateTime since, String sessionId) {
         try {
             List<ActivityBroadcast> activities = realtimeActivityService.getRecentActivities(user, scope, entityId, since);
 
             if (!activities.isEmpty()) {
-
                 String destination = String.format("/user/%d/queue/activities/recent", user.getId());
-                // Note: This would need the messaging template, which should be injected
+                messagingTemplate.convertAndSendToUser(
+                        user.getUsername(),
+                        "/queue/activities/recent",
+                        activities
+                );
                 log.info("Sending {} recent activities to user {} session {}",
                         activities.size(), user.getUsername(), sessionId);
             }
@@ -283,7 +240,6 @@ public class WebSocketActivityController {
             log.error("Failed to send recent activities: {}", e.getMessage(), e);
         }
     }
-
 
     private static class SessionInfo {
         Long userId;

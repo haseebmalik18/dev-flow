@@ -15,6 +15,8 @@ export const useRealtimeActivity = () => {
 
   const handleNewActivity = useCallback(
     (activity: ActivityUpdate) => {
+      console.log("Processing new activity in useRealtimeActivity:", activity);
+
       setRealtimeActivities((prev) => {
         const updated = [activity, ...prev].slice(0, 50);
         return updated;
@@ -42,39 +44,72 @@ export const useRealtimeActivity = () => {
         queryKey: ["dashboard", "activity"],
         exact: false,
       });
+
+      setTimeout(() => {
+        queryClient.invalidateQueries({
+          queryKey: ["dashboard", "stats"],
+          exact: false,
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["dashboard", "projects"],
+          exact: false,
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["dashboard", "tasks"],
+          exact: false,
+        });
+      }, 1000);
     },
     [queryClient]
   );
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!isConnected) {
+      console.log("WebSocket not connected, skipping activity subscription");
+      return;
+    }
 
+    console.log("Setting up activity update listener");
     const unsubscribe = websocketService.onActivityUpdate(handleNewActivity);
 
     return () => {
+      console.log("Cleaning up activity update listener");
       unsubscribe();
     };
   }, [isConnected, handleNewActivity]);
 
   const markAsRead = useCallback(() => {
+    console.log("Marking activities as read");
     setHasNewActivity(false);
     setRealtimeActivities([]);
+
+    localStorage.setItem("lastActivitySeen", new Date().toISOString());
   }, []);
 
   const subscribeToProject = useCallback((projectId: number) => {
-    websocketService.subscribeToProjectActivities(projectId);
+    console.log(
+      `Project ${projectId} subscription requested - not implemented yet`
+    );
+    // websocketService.subscribeToProjectActivities(projectId);
   }, []);
 
   const unsubscribeFromProject = useCallback((projectId: number) => {
-    websocketService.unsubscribeFromProject(projectId);
+    console.log(
+      `Unsubscribe from project ${projectId} requested - not implemented yet`
+    );
+    // websocketService.unsubscribeFromProject(projectId);
   }, []);
 
   const subscribeToTask = useCallback((taskId: number) => {
-    websocketService.subscribeToTaskActivities(taskId);
+    console.log(`Task ${taskId} subscription requested - not implemented yet`);
+    // websocketService.subscribeToTaskActivities(taskId);
   }, []);
 
   const unsubscribeFromTask = useCallback((taskId: number) => {
-    websocketService.unsubscribeFromTask(taskId);
+    console.log(
+      `Unsubscribe from task ${taskId} requested - not implemented yet`
+    );
+    // websocketService.unsubscribeFromTask(taskId);
   }, []);
 
   return {
