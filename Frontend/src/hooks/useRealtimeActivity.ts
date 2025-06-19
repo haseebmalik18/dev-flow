@@ -1,121 +1,151 @@
-import { useEffect, useState, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { websocketService } from "../services/webSocketService";
-import type { ActivityUpdate } from "../services/webSocketService";
-import { useWebSocket } from "./useWebSocket";
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  websocketService,
+  type ActivityUpdate,
+} from "../services/webSocketService";
 import type { ActivityItem } from "../services/dashboardService";
 
-export const useRealtimeActivity = () => {
-  const [realtimeActivities, setRealtimeActivities] = useState<
-    ActivityUpdate[]
-  >([]);
+export interface UseRealtimeActivityReturn {
+  realtimeActivities: ActivityItem[];
+  hasNewActivity: boolean;
+  isConnected: boolean;
+  markAsRead: () => void;
+  clearActivities: () => void;
+  addActivity: (activity: ActivityUpdate) => void;
+}
+
+// Transform WebSocket activity to dashboard activity format
+const transformActivity = (activity: ActivityUpdate): ActivityItem => ({
+  id: activity.id,
+  type: activity.type.toLowerCase(),
+  description: activity.description,
+  createdAt: activity.createdAt,
+  user: {
+    name: activity.user.name,
+    initials: activity.user.initials,
+    avatar: activity.user.avatar,
+  },
+  project: activity.project,
+  task: activity.task,
+});
+
+export const useRealtimeActivity = (): UseRealtimeActivityReturn => {
+  const [realtimeActivities, setRealtimeActivities] = useState<ActivityItem[]>(
+    []
+  );
   const [hasNewActivity, setHasNewActivity] = useState(false);
-  const queryClient = useQueryClient();
-  const { isConnected } = useWebSocket();
-
-  // Handle new activity updates from STOMP
-  const handleNewActivity = useCallback(
-    (activity: ActivityUpdate) => {
-      console.log("📥 Processing new STOMP activity:", activity);
-
-      // Add to realtime activities list (prevent duplicates)
-      setRealtimeActivities((prev) => {
-        const exists = prev.some((a) => a.id === activity.id);
-        if (exists) return prev;
-        return [activity, ...prev].slice(0, 50);
-      });
-
-      setHasNewActivity(true);
-
-      // Update React Query cache for dashboard activity
-      queryClient.setQueryData(["dashboard", "activity"], (oldData: any) => {
-        // Handle case where oldData might not be an array or might be undefined
-        if (!oldData || !Array.isArray(oldData)) {
-          console.log(
-            "📝 Dashboard activity cache is empty or invalid, creating new array"
-          );
-          const newActivityItem: ActivityItem = {
-            id: activity.id,
-            type: activity.type,
-            description: activity.description,
-            createdAt: activity.createdAt,
-            user: activity.user,
-            project: activity.project,
-            task: activity.task,
-          };
-          return [newActivityItem];
-        }
-
-        const newActivityItem: ActivityItem = {
-          id: activity.id,
-          type: activity.type,
-          description: activity.description,
-          createdAt: activity.createdAt,
-          user: activity.user,
-          project: activity.project,
-          task: activity.task,
-        };
-
-        // Prevent duplicates
-        const exists = oldData.some(
-          (item: ActivityItem) => item.id === activity.id
-        );
-        if (exists) {
-          console.log("🔄 Activity already exists in cache, skipping");
-          return oldData;
-        }
-
-        console.log("✅ Adding new activity to cache");
-        return [newActivityItem, ...oldData].slice(0, 20);
-      });
-
-      // Invalidate dashboard queries after a short delay
-      setTimeout(() => {
-        queryClient.invalidateQueries({
-          queryKey: ["dashboard", "stats"],
-          exact: false,
-        });
-      }, 1000);
-    },
-    [queryClient]
+  const [isConnected, setIsConnected] = useState(false);
+  const lastSeenTimestamp = useRef<string | null>(
+    localStorage.getItem("lastActivitySeen")
   );
 
-  // Setup STOMP activity listener when connected
+  // Listen to WebSocket connection status
   useEffect(() => {
-    if (!isConnected) {
-      console.log("❌ STOMP not connected, skipping activity subscription");
-      return;
-    }
+    const unsubscribe = websocketService.onConnectionStatusChange((state) => {
+      setIsConnected(state === "connected");
 
-    console.log("✅ Setting up STOMP activity listener");
-    const unsubscribe = websocketService.onActivityUpdate(handleNewActivity);
+      if (state === "connected") {
+        console.log("✅ Real-time activities connected");
+      } else {
+        console.log("❌ Real-time activities disconnected");
+      }
+    });
 
-    return () => {
-      console.log("🧹 Cleaning up STOMP activity listener");
-      unsubscribe();
-    };
-  }, [isConnected, handleNewActivity]);
-
-  // Clear activities when disconnected
-  useEffect(() => {
-    if (!isConnected && realtimeActivities.length > 0) {
-      console.log("🧹 STOMP disconnected, clearing realtime activities");
-      setRealtimeActivities([]);
-      setHasNewActivity(false);
-    }
-  }, [isConnected, realtimeActivities.length]);
-
-  const markAsRead = useCallback(() => {
-    console.log("✅ Marking STOMP activities as read");
-    setHasNewActivity(false);
-    setRealtimeActivities([]);
-    localStorage.setItem("lastActivitySeen", new Date().toISOString());
+    return unsubscribe;
   }, []);
+
+  // Listen to activity updates
+  useEffect(() => {
+    const unsubscribe = websocketService.onActivityUpdate((activity) => {
+      console.log("📥 Received real-time activity:", activity);
+
+      const transformedActivity = transformActivity(activity);
+
+      setRealtimeActivities((prev) => {
+        // Check if activity already exists to prevent duplicates
+        const existsInPrev = prev.some((a) => a.id === transformedActivity.id);
+        if (existsInPrev) {
+          return prev;
+        }
+
+        // Add new activity to the beginning and limit to 50 items
+        const newActivities = [transformedActivity, ...prev].slice(0, 50);
+        return newActivities;
+      });
+
+      // Mark as having new activity if it's newer than last seen
+      const activityTime = new Date(activity.createdAt).getTime();
+      const lastSeenTime = lastSeenTimestamp.current
+        ? new Date(lastSeenTimestamp.current).getTime()
+        : 0;
+
+      if (activityTime > lastSeenTime) {
+        setHasNewActivity(true);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Mark activities as read
+  const markAsRead = useCallback(() => {
+    console.log("📖 Marking activities as read");
+    const now = new Date().toISOString();
+    lastSeenTimestamp.current = now;
+    localStorage.setItem("lastActivitySeen", now);
+    setHasNewActivity(false);
+  }, []);
+
+  // Clear all real-time activities
+  const clearActivities = useCallback(() => {
+    console.log("🗑️ Clearing real-time activities");
+    setRealtimeActivities([]);
+    setHasNewActivity(false);
+  }, []);
+
+  // Manually add activity (useful for testing or local updates)
+  const addActivity = useCallback((activity: ActivityUpdate) => {
+    console.log("➕ Manually adding activity:", activity);
+    const transformedActivity = transformActivity(activity);
+
+    setRealtimeActivities((prev) => {
+      const existsInPrev = prev.some((a) => a.id === transformedActivity.id);
+      if (existsInPrev) {
+        return prev;
+      }
+      return [transformedActivity, ...prev].slice(0, 50);
+    });
+
+    setHasNewActivity(true);
+  }, []);
+
+  // Auto-mark as read when component unmounts
+  useEffect(() => {
+    return () => {
+      if (hasNewActivity) {
+        markAsRead();
+      }
+    };
+  }, [hasNewActivity, markAsRead]);
+
+  // Debug logging
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("🔍 Real-time activity state:", {
+        activitiesCount: realtimeActivities.length,
+        hasNewActivity,
+        isConnected,
+        lastSeen: lastSeenTimestamp.current,
+      });
+    }
+  }, [realtimeActivities.length, hasNewActivity, isConnected]);
 
   return {
     realtimeActivities,
     hasNewActivity,
-    markAsRead,
     isConnected,
+    markAsRead,
+    clearActivities,
+    addActivity,
   };
 };

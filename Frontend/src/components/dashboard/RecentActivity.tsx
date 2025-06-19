@@ -13,9 +13,11 @@ import {
   Wifi,
   WifiOff,
   Circle,
+  RefreshCw,
 } from "lucide-react";
 import { useRecentActivity } from "../../hooks/useDashboard";
-import { useRealtimeActivity } from "../../hooks/useRealtimeActivity";
+import { useRealtimeActivity } from "../../hooks/useRealTimeActivity";
+import { useWebSocket } from "../../hooks/useWebSocket";
 import type { ActivityItem } from "../../services/dashboardService";
 
 const ActivityIcon: React.FC<{ type: string }> = ({ type }) => {
@@ -161,22 +163,39 @@ const ActivityItemSkeleton: React.FC = () => (
 
 export const RecentActivity: React.FC = () => {
   const { data: activities, isLoading, error } = useRecentActivity();
-  const { hasNewActivity, markAsRead, isConnected, realtimeActivities } =
-    useRealtimeActivity();
+  const {
+    realtimeActivities,
+    hasNewActivity,
+    markAsRead,
+    isConnected: realtimeConnected,
+    clearActivities,
+  } = useRealtimeActivity();
+  const { connectionState, forceReconnect } = useWebSocket();
 
+  // Merge server activities with real-time activities
   const allActivities = React.useMemo(() => {
     if (!activities) return realtimeActivities;
 
+    // Create a Map to track seen activity IDs to prevent duplicates
     const activityIds = new Set(activities.map((a) => a.id));
     const newRealtimeActivities = realtimeActivities.filter(
       (ra) => !activityIds.has(ra.id)
     );
 
-    return [...newRealtimeActivities, ...activities];
+    // Merge and sort by creation time
+    const merged = [...newRealtimeActivities, ...activities];
+    return merged.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }, [activities, realtimeActivities]);
 
   const handleMarkAsRead = () => {
     markAsRead();
+  };
+
+  const handleClearActivities = () => {
+    clearActivities();
   };
 
   if (error) {
@@ -191,9 +210,15 @@ export const RecentActivity: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center justify-center py-8">
-          <div className="flex items-center space-x-2 text-red-600">
-            <AlertTriangle className="w-5 h-5" />
-            <span>Failed to load activity</span>
+          <div className="flex flex-col items-center space-y-2 text-red-600">
+            <AlertTriangle className="w-8 h-8" />
+            <span className="text-sm">Failed to load activity</span>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded-full transition-colors"
+            >
+              Retry
+            </button>
           </div>
         </div>
       </div>
@@ -211,7 +236,7 @@ export const RecentActivity: React.FC = () => {
 
           {/* Connection Status Indicator */}
           <div className="flex items-center space-x-1">
-            {isConnected ? (
+            {connectionState === "connected" ? (
               <div
                 className="flex items-center space-x-1 text-green-600"
                 title="Real-time updates active"
@@ -219,13 +244,21 @@ export const RecentActivity: React.FC = () => {
                 <Wifi className="w-4 h-4" />
                 <Circle className="w-2 h-2 fill-current animate-pulse" />
               </div>
-            ) : (
+            ) : connectionState === "connecting" ? (
               <div
-                className="flex items-center space-x-1 text-gray-400"
-                title="Real-time updates disconnected"
+                className="flex items-center space-x-1 text-yellow-600"
+                title="Connecting to real-time updates"
+              >
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              </div>
+            ) : (
+              <button
+                onClick={forceReconnect}
+                className="flex items-center space-x-1 text-gray-400 hover:text-gray-600 transition-colors"
+                title="Real-time updates disconnected - click to reconnect"
               >
                 <WifiOff className="w-4 h-4" />
-              </div>
+              </button>
             )}
           </div>
 
@@ -237,13 +270,25 @@ export const RecentActivity: React.FC = () => {
               title="New activity available"
             >
               <Circle className="w-2 h-2 fill-current animate-pulse" />
-              <span>New</span>
+              <span>{realtimeActivities.length} new</span>
             </button>
           )}
         </div>
-        <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-          View All
-        </button>
+
+        <div className="flex items-center space-x-2">
+          {process.env.NODE_ENV === "development" &&
+            realtimeActivities.length > 0 && (
+              <button
+                onClick={handleClearActivities}
+                className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            View All
+          </button>
+        </div>
       </div>
 
       <div className="space-y-1 max-h-96 overflow-y-auto">
@@ -267,6 +312,14 @@ export const RecentActivity: React.FC = () => {
               <p className="text-sm">
                 Start working on projects to see activity
               </p>
+              {process.env.NODE_ENV === "development" && (
+                <button
+                  onClick={() => (window as any).wsDebug?.triggerRandom()}
+                  className="mt-3 px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors"
+                >
+                  Test Activity
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -278,6 +331,17 @@ export const RecentActivity: React.FC = () => {
             <button className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
               Load more activities
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Connection status footer for debugging */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="text-xs text-gray-500 space-y-1">
+            <div>Status: {connectionState}</div>
+            <div>Real-time: {realtimeActivities.length} activities</div>
+            <div>Server: {activities?.length || 0} activities</div>
           </div>
         </div>
       )}
