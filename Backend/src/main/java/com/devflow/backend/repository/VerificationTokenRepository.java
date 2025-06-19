@@ -5,8 +5,10 @@ import com.devflow.backend.entity.VerificationToken;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.stereotype.Repository;
 
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -16,6 +18,11 @@ public interface VerificationTokenRepository extends JpaRepository<VerificationT
     Optional<VerificationToken> findByToken(String token);
 
     Optional<VerificationToken> findByEmailAndCodeAndType(String email, String code, TokenType type);
+
+    // SELECT FOR UPDATE to prevent concurrent access
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT vt FROM VerificationToken vt WHERE vt.email = ?1 AND vt.code = ?2 AND vt.type = ?3")
+    Optional<VerificationToken> findByEmailAndCodeAndTypeForUpdate(String email, String code, TokenType type);
 
     @Query("SELECT vt FROM VerificationToken vt WHERE vt.email = ?1 AND vt.type = ?2 AND vt.usedAt IS NULL AND vt.expiresAt > ?3")
     Optional<VerificationToken> findValidTokenByEmailAndType(String email, TokenType type, LocalDateTime now);

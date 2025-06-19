@@ -16,10 +16,13 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +40,10 @@ public class AuthService {
     private long verificationCodeExpiration;
 
     private final SecureRandom secureRandom = new SecureRandom();
+
+
+    private final ConcurrentHashMap<String, Long> processingCache = new ConcurrentHashMap<>();
+    private static final long CACHE_TIMEOUT_MS = 30000;
 
     @Transactional
     public UserInfo register(RegisterRequest request) {
@@ -59,11 +66,9 @@ public class AuthService {
                 .build();
 
         User savedUser = userRepository.save(user);
-
         sendVerificationCode(savedUser.getEmail(), savedUser.getFirstName(), TokenType.EMAIL_VERIFICATION);
 
         log.info("User registered successfully: {}", savedUser.getUsername());
-
         return mapToUserInfo(savedUser);
     }
 
@@ -91,47 +96,74 @@ public class AuthService {
         }
 
         String jwt = jwtService.generateToken(user);
-
         log.info("User logged in successfully: {}", user.getUsername());
 
         return new AuthResponse(jwt, mapToUserInfo(user));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public AuthResponse verifyEmail(VerifyEmailRequest request) {
-        VerificationToken token = tokenRepository.findByEmailAndCodeAndType(
-                        request.getEmail(),
-                        request.getCode(),
-                        TokenType.EMAIL_VERIFICATION
-                )
-                .orElseThrow(() -> new AuthException("Invalid verification code"));
+        String cacheKey = request.getEmail() + ":" + request.getCode();
+        long currentTime = System.currentTimeMillis();
 
-        if (token.isExpired()) {
 
-            tokenRepository.delete(token);
-            throw new AuthException("Verification code has expired");
+        Long existingRequest = processingCache.get(cacheKey);
+        if (existingRequest != null && (currentTime - existingRequest) < CACHE_TIMEOUT_MS) {
+            log.warn("Duplicate verification request detected for email: {}", request.getEmail());
+            throw new AuthException("Verification request already in progress");
         }
 
-        if (token.isUsed()) {
+
+        processingCache.put(cacheKey, currentTime);
+
+        try {
+
+            VerificationToken token = tokenRepository.findByEmailAndCodeAndTypeForUpdate(
+                    request.getEmail(),
+                    request.getCode(),
+                    TokenType.EMAIL_VERIFICATION
+            ).orElseThrow(() -> {
+                log.warn("Invalid verification code attempt for email: {}", request.getEmail());
+                return new AuthException("Invalid verification code");
+            });
+
+
+            if (token.isExpired()) {
+                tokenRepository.delete(token);
+                log.warn("Expired verification code used for email: {}", request.getEmail());
+                throw new AuthException("Verification code has expired");
+            }
+
+            if (token.isUsed()) {
+                tokenRepository.delete(token);
+                log.warn("Already used verification code attempted for email: {}", request.getEmail());
+                throw new AuthException("Verification code has already been used");
+            }
+
+
+            token.setUsedAt(LocalDateTime.now());
+            tokenRepository.save(token);
+
+
+            User user = userRepository.findByEmail(request.getEmail())
+                    .orElseThrow(() -> new AuthException("User not found"));
+
+            if (!user.getIsVerified()) {
+                user.setIsVerified(true);
+                userRepository.save(user);
+                log.info("Email verified successfully for user: {}", user.getUsername());
+            }
+
 
             tokenRepository.delete(token);
-            throw new AuthException("Verification code has already been used");
+
+            String jwt = jwtService.generateToken(user);
+            return new AuthResponse(jwt, mapToUserInfo(user));
+
+        } finally {
+
+            processingCache.remove(cacheKey);
         }
-
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new AuthException("User not found"));
-
-        user.setIsVerified(true);
-        userRepository.save(user);
-
-        tokenRepository.delete(token);
-
-
-        String jwt = jwtService.generateToken(user);
-
-        log.info("Email verified successfully for user: {} - Token deleted", user.getUsername());
-
-        return new AuthResponse(jwt, mapToUserInfo(user));
     }
 
     @Transactional
@@ -147,7 +179,6 @@ public class AuthService {
         tokenRepository.deleteByEmailAndType(request.getEmail(), TokenType.EMAIL_VERIFICATION);
 
         sendVerificationCode(user.getEmail(), user.getFirstName(), TokenType.EMAIL_VERIFICATION);
-
         log.info("Verification code resent for user: {}", user.getUsername());
     }
 
@@ -164,30 +195,30 @@ public class AuthService {
         tokenRepository.deleteByEmailAndType(request.getEmail(), TokenType.PASSWORD_RESET);
 
         sendVerificationCode(user.getEmail(), user.getFirstName(), TokenType.PASSWORD_RESET);
-
         log.info("Password reset code sent for user: {}", user.getUsername());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void resetPassword(ResetPasswordRequest request) {
-        VerificationToken token = tokenRepository.findByEmailAndCodeAndType(
-                        request.getEmail(),
-                        request.getCode(),
-                        TokenType.PASSWORD_RESET
-                )
-                .orElseThrow(() -> new AuthException("Invalid reset code"));
+        VerificationToken token = tokenRepository.findByEmailAndCodeAndTypeForUpdate(
+                request.getEmail(),
+                request.getCode(),
+                TokenType.PASSWORD_RESET
+        ).orElseThrow(() -> new AuthException("Invalid reset code"));
 
         if (token.isExpired()) {
-
             tokenRepository.delete(token);
             throw new AuthException("Reset code has expired");
         }
 
         if (token.isUsed()) {
-
             tokenRepository.delete(token);
             throw new AuthException("Reset code has already been used");
         }
+
+
+        token.setUsedAt(LocalDateTime.now());
+        tokenRepository.save(token);
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new AuthException("User not found"));
@@ -198,7 +229,7 @@ public class AuthService {
 
         tokenRepository.delete(token);
 
-        log.info("Password reset successfully for user: {} - Token deleted", user.getUsername());
+        log.info("Password reset successfully for user: {}", user.getUsername());
     }
 
     private void sendVerificationCode(String email, String firstName, TokenType tokenType) {
@@ -237,5 +268,13 @@ public class AuthService {
                 .role(user.getRole().name())
                 .isVerified(user.getIsVerified())
                 .build();
+    }
+
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedRate = 300000)
+    public void cleanupProcessingCache() {
+        long currentTime = System.currentTimeMillis();
+        processingCache.entrySet().removeIf(entry ->
+                (currentTime - entry.getValue()) > CACHE_TIMEOUT_MS);
     }
 }

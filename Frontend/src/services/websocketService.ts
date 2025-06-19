@@ -41,15 +41,15 @@ class NativeWebSocketService {
   constructor() {}
 
   private getWsUrl(): string {
-    const baseUrl = process.env.REACT_APP_WS_URL || "ws://localhost:8080";
+    const WS_URL = "http://localhost:3000/ws";
     const token = useAuthStore.getState().token;
 
     if (token) {
-      const separator = baseUrl.includes("?") ? "&" : "?";
-      return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
+      const separator = WS_URL.includes("?") ? "&" : "?";
+      return `${WS_URL}${separator}token=${encodeURIComponent(token)}`;
     }
 
-    return baseUrl;
+    return WS_URL;
   }
 
   public connect(): void {

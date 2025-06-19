@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
@@ -14,9 +14,13 @@ export const VerifyEmailPage: React.FC = () => {
   const [canResend, setCanResend] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [codeError, setCodeError] = useState("");
+
   const location = useLocation();
   const email = location.state?.email || "";
   const { verifyEmailAndLogin } = useAuth();
+
+  const submissionController = useRef<AbortController | null>(null);
+  const isSubmitting = useRef(false);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -27,25 +31,47 @@ export const VerifyEmailPage: React.FC = () => {
     }
   }, [countdown]);
 
-  const handleCodeComplete = async (code: string) => {
-    if (code.length !== 6) return;
+  useEffect(() => {
+    return () => {
+      if (submissionController.current) {
+        submissionController.current.abort();
+      }
+    };
+  }, []);
 
+  const handleCodeComplete = async (code: string) => {
+    if (isSubmitting.current || isLoading) {
+      console.warn("Verification already in progress");
+      return;
+    }
+
+    if (submissionController.current) {
+      submissionController.current.abort();
+    }
+
+    submissionController.current = new AbortController();
+    isSubmitting.current = true;
     setIsLoading(true);
     setCodeError("");
 
     try {
       await verifyEmailAndLogin({ email, code });
     } catch (error: any) {
-      const message =
-        error.response?.data?.message || "Invalid verification code";
-      setCodeError(message);
+      if (!submissionController.current?.signal.aborted) {
+        const message =
+          error.response?.data?.message || "Invalid verification code";
+        setCodeError(message);
+      }
     } finally {
-      setIsLoading(false);
+      if (!submissionController.current?.signal.aborted) {
+        isSubmitting.current = false;
+        setIsLoading(false);
+      }
     }
   };
 
   const handleResend = async () => {
-    if (!canResend || !email) return;
+    if (!canResend || !email || isResending) return;
 
     setIsResending(true);
     try {
@@ -55,6 +81,12 @@ export const VerifyEmailPage: React.FC = () => {
         setCanResend(false);
         setCountdown(60);
         setCodeError("");
+
+        if (submissionController.current) {
+          submissionController.current.abort();
+        }
+        isSubmitting.current = false;
+        setIsLoading(false);
       }
     } catch (error: any) {
       const message = error.response?.data?.message || "Failed to resend code";
@@ -128,6 +160,7 @@ export const VerifyEmailPage: React.FC = () => {
               variant="outline"
               onClick={handleResend}
               loading={isResending}
+              disabled={isLoading}
               icon={<RefreshCw className="w-4 h-4" />}
               className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white font-medium"
             >

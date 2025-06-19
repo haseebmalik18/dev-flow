@@ -1,4 +1,3 @@
-
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -116,7 +115,7 @@ public class Activity {
 
     public static Activity taskCommented(User user, Task task) {
         return Activity.builder()
-                .type(ActivityType.TASK_COMMENTED)
+                .type(ActivityType.COMMENT_ADDED)
                 .description(String.format("%s commented on task \"%s\"",
                         user.getFullName(), task.getTitle()))
                 .user(user)
