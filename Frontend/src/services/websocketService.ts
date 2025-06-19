@@ -1,6 +1,5 @@
 import { Client, StompConfig, type Message } from "@stomp/stompjs";
 import { useAuthStore } from "../hooks/useAuthStore";
-import { getWebSocketConfig, websocketConfig } from "../config/websocket";
 
 export interface ActivityUpdate {
   id: number;
@@ -16,68 +15,70 @@ export interface ActivityUpdate {
   task?: string;
 }
 
-export interface WebSocketMessage {
-  type:
-    | "ACTIVITY_UPDATE"
-    | "CONNECTION_STATUS"
-    | "HEARTBEAT"
-    | "SUBSCRIBE"
-    | "UNSUBSCRIBE"
-    | "AUTH";
-  data: any;
-  timestamp: string;
-  subscription?: string;
-}
-
-class StompWebSocketService {
+class SimpleWebSocketService {
   private client: Client | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
   private isConnecting = false;
-  private subscriptions: Map<string, any> = new Map();
   private activityCallbacks: Set<(activity: ActivityUpdate) => void> =
     new Set();
   private connectionCallbacks: Set<(connected: boolean) => void> = new Set();
 
   constructor() {
-    this.setupClient();
+    // Setup will happen when connect() is called
   }
 
   private setupClient(): void {
-    const config = getWebSocketConfig();
-
     const stompConfig: StompConfig = {
-      brokerURL: config.url,
-
-      webSocketFactory: () => {
-        return new WebSocket(config.url);
-      },
+      brokerURL: "ws://localhost:3000/ws",
 
       connectHeaders: this.getAuthHeaders(),
 
       debug: (str: string) => {
         if (process.env.NODE_ENV === "development") {
-          console.log("STOMP Debug:", str);
+          console.log("STOMP:", str);
         }
       },
 
-      reconnectDelay: config.reconnectDelay,
-      heartbeatIncoming: config.heartbeatIncoming,
-      heartbeatOutgoing: config.heartbeatOutgoing,
+      // STOMP-specific configuration
+      reconnectDelay: 2000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000,
 
-      onConnect: this.onConnect.bind(this),
-      onDisconnect: this.onDisconnect.bind(this),
-      onStompError: this.onStompError.bind(this),
-      onWebSocketError: this.onWebSocketError.bind(this),
-      onWebSocketClose: this.onWebSocketClose.bind(this),
+      // Force STOMP protocol
+      forceBinaryWSFrames: false,
+      appendMissingNULLonIncoming: true,
+
+      onConnect: () => {
+        console.log("✅ STOMP WebSocket connected");
+        this.isConnecting = false;
+        this.notifyConnectionStatus(true);
+        this.subscribeToGlobalActivities();
+      },
+
+      onDisconnect: () => {
+        console.log("❌ STOMP WebSocket disconnected");
+        this.notifyConnectionStatus(false);
+      },
+
+      onStompError: (frame: any) => {
+        console.error("STOMP protocol error:", frame);
+        this.notifyConnectionStatus(false);
+      },
+
+      onWebSocketError: (error: Event) => {
+        console.error("WebSocket transport error:", error);
+        this.isConnecting = false;
+        this.notifyConnectionStatus(false);
+      },
+
+      // Ensure we're using STOMP over WebSocket (not raw WebSocket)
+      webSocketFactory: () => {
+        const ws = new WebSocket("ws://localhost:3000/ws");
+        ws.binaryType = "arraybuffer";
+        return ws;
+      },
     };
 
     this.client = new Client(stompConfig);
-  }
-
-  private getWsUrl(): string {
-    return getWebSocketConfig().url;
   }
 
   private getAuthHeaders(): Record<string, string> {
@@ -86,126 +87,91 @@ class StompWebSocketService {
 
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
+      headers["token"] = token;
     }
 
     return headers;
   }
 
-  private onConnect(): void {
-    console.log("STOMP WebSocket connected");
-    this.isConnecting = false;
-    this.reconnectAttempts = 0;
-    this.notifyConnectionStatus(true);
-
-    this.resubscribeAll();
-
-    this.subscribeToGlobalActivities();
-  }
-
-  private onDisconnect(): void {
-    console.log("STOMP WebSocket disconnected");
-    this.notifyConnectionStatus(false);
-    this.clearSubscriptions();
-  }
-
-  private onStompError(frame: any): void {
-    console.error("STOMP error:", frame);
-    this.notifyConnectionStatus(false);
-  }
-
-  private onWebSocketError(error: Event): void {
-    console.error("WebSocket error:", error);
-    this.isConnecting = false;
-    this.notifyConnectionStatus(false);
-  }
-
-  private onWebSocketClose(event: CloseEvent): void {
-    console.log("WebSocket closed:", event.code, event.reason);
-    this.isConnecting = false;
-    this.notifyConnectionStatus(false);
-
-    if (
-      event.code !== 1000 &&
-      this.reconnectAttempts < this.maxReconnectAttempts
-    ) {
-      this.attemptReconnect();
+  private subscribeToGlobalActivities(): void {
+    if (!this.client?.connected) {
+      console.warn("Cannot subscribe - not connected");
+      return;
     }
-  }
 
-  private attemptReconnect(): void {
-    if (this.isConnecting) return;
-
-    this.reconnectAttempts++;
-    console.log(
-      `Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`
-    );
-
-    setTimeout(() => {
-      this.connect();
-    }, this.reconnectDelay * this.reconnectAttempts);
-  }
-
-  private resubscribeAll(): void {
-    const subscriptionKeys = Array.from(this.subscriptions.keys());
-
-    this.subscriptions.clear();
-
-    subscriptionKeys.forEach((destination) => {
-      if (destination === websocketConfig.destinations.globalActivities) {
-        this.subscribeToGlobalActivities();
-      } else if (destination.startsWith("/topic/activities/project/")) {
-        const projectId = parseInt(destination.split("/").pop() || "0");
-        if (projectId > 0) {
-          this.subscribeToProjectActivities(projectId);
+    try {
+      // Send STOMP subscription message to the backend mapping
+      const subscription = this.client.subscribe(
+        "/user/queue/activities/global",
+        (message: Message) => {
+          this.handleActivityMessage(message);
         }
-      } else if (destination.startsWith("/topic/activities/task/")) {
-        const taskId = parseInt(destination.split("/").pop() || "0");
-        if (taskId > 0) {
-          this.subscribeToTaskActivities(taskId);
-        }
-      } else if (destination.startsWith("/topic/notifications/user/")) {
-        this.subscribeToUserNotifications();
-      } else if (destination.startsWith("/topic/teams/")) {
-        const teamId = parseInt(destination.split("/")[2] || "0");
-        if (teamId > 0) {
-          this.subscribeToTeamUpdates(teamId);
-        }
-      }
-    });
-  }
+      );
 
-  private clearSubscriptions(): void {
-    this.subscriptions.forEach((subscription) => {
-      if (subscription && subscription.unsubscribe) {
-        subscription.unsubscribe();
-      }
-    });
-    this.subscriptions.clear();
+      // Also send a STOMP message to trigger the backend subscription
+      this.client.publish({
+        destination: "/app/subscribe/global",
+        body: JSON.stringify({
+          scope: "global",
+          lastSeen: localStorage.getItem("lastActivitySeen"),
+        }),
+        headers: this.getAuthHeaders(),
+      });
+
+      console.log("✅ Subscribed to global activities via STOMP");
+    } catch (error) {
+      console.error("❌ Failed to subscribe to activities:", error);
+    }
   }
 
   private handleActivityMessage(message: Message): void {
     try {
       const activity: ActivityUpdate = JSON.parse(message.body);
+      console.log("📥 Received activity:", activity);
 
-      localStorage.setItem("lastActivitySeen", new Date().toISOString());
-
-      this.activityCallbacks.forEach((callback) => callback(activity));
+      this.activityCallbacks.forEach((callback) => {
+        try {
+          callback(activity);
+        } catch (error) {
+          console.error("Error in activity callback:", error);
+        }
+      });
     } catch (error) {
       console.error("Failed to parse activity message:", error);
     }
   }
 
   private notifyConnectionStatus(connected: boolean): void {
-    this.connectionCallbacks.forEach((callback) => callback(connected));
+    this.connectionCallbacks.forEach((callback) => {
+      try {
+        callback(connected);
+      } catch (error) {
+        console.error("Error in connection callback:", error);
+      }
+    });
   }
 
   public connect(): void {
-    if (this.isConnected() || this.isConnecting) {
+    // Check authentication
+    const authState = useAuthStore.getState();
+    if (!authState.isAuthenticated || !authState.token) {
+      console.warn("Cannot connect - user not authenticated");
       return;
     }
 
+    if (this.isConnected() || this.isConnecting) {
+      console.log("Already connected or connecting");
+      return;
+    }
+
+    console.log("🔄 Connecting to WebSocket...");
     this.isConnecting = true;
 
+    if (!this.client) {
+      this.setupClient();
+    }
+
+    // Update auth headers
     if (this.client) {
       this.client.connectHeaders = this.getAuthHeaders();
       this.client.activate();
@@ -213,8 +179,7 @@ class StompWebSocketService {
   }
 
   public disconnect(): void {
-    this.clearSubscriptions();
-    this.reconnectAttempts = this.maxReconnectAttempts;
+    console.log("🔄 Disconnecting WebSocket...");
 
     if (this.client) {
       this.client.deactivate();
@@ -224,148 +189,14 @@ class StompWebSocketService {
     this.connectionCallbacks.clear();
   }
 
-  public subscribeToGlobalActivities(): void {
-    if (!this.isConnected()) {
-      console.warn("Cannot subscribe - not connected");
-      return;
-    }
-
-    const destination = websocketConfig.destinations.globalActivities;
-
-    if (this.subscriptions.has(destination)) {
-      return;
-    }
-
-    const subscription = this.client!.subscribe(
-      destination,
-      (message: Message) => {
-        this.handleActivityMessage(message);
-      }
-    );
-
-    this.subscriptions.set(destination, subscription);
-    console.log("Subscribed to global activities");
-  }
-
-  public subscribeToProjectActivities(projectId: number): void {
-    if (!this.isConnected()) {
-      console.warn("Cannot subscribe - not connected");
-      return;
-    }
-
-    const destination =
-      websocketConfig.destinations.projectActivities(projectId);
-
-    this.subscriptions.forEach((subscription, dest) => {
-      if (
-        dest.startsWith("/topic/activities/project/") &&
-        dest !== destination
-      ) {
-        subscription.unsubscribe();
-        this.subscriptions.delete(dest);
-      }
-    });
-
-    if (this.subscriptions.has(destination)) {
-      return;
-    }
-
-    const subscription = this.client!.subscribe(
-      destination,
-      (message: Message) => {
-        this.handleActivityMessage(message);
-      }
-    );
-
-    this.subscriptions.set(destination, subscription);
-    console.log(`Subscribed to project ${projectId} activities`);
-
-    localStorage.setItem(
-      `lastActivitySeen-project-${projectId}`,
-      new Date().toISOString()
-    );
-  }
-
-  public subscribeToTaskActivities(taskId: number): void {
-    if (!this.isConnected()) {
-      console.warn("Cannot subscribe - not connected");
-      return;
-    }
-
-    const destination = websocketConfig.destinations.taskActivities(taskId);
-
-    this.subscriptions.forEach((subscription, dest) => {
-      if (dest.startsWith("/topic/activities/task/") && dest !== destination) {
-        subscription.unsubscribe();
-        this.subscriptions.delete(dest);
-      }
-    });
-
-    if (this.subscriptions.has(destination)) {
-      return;
-    }
-
-    const subscription = this.client!.subscribe(
-      destination,
-      (message: Message) => {
-        this.handleActivityMessage(message);
-      }
-    );
-
-    this.subscriptions.set(destination, subscription);
-    console.log(`Subscribed to task ${taskId} activities`);
-
-    localStorage.setItem(
-      `lastActivitySeen-task-${taskId}`,
-      new Date().toISOString()
-    );
-  }
-
-  public unsubscribeFromProject(projectId: number): void {
-    const destination =
-      websocketConfig.destinations.projectActivities(projectId);
-    const subscription = this.subscriptions.get(destination);
-
-    if (subscription) {
-      subscription.unsubscribe();
-      this.subscriptions.delete(destination);
-      console.log(`Unsubscribed from project ${projectId} activities`);
-    }
-  }
-
-  public unsubscribeFromTask(taskId: number): void {
-    const destination = websocketConfig.destinations.taskActivities(taskId);
-    const subscription = this.subscriptions.get(destination);
-
-    if (subscription) {
-      subscription.unsubscribe();
-      this.subscriptions.delete(destination);
-      console.log(`Unsubscribed from task ${taskId} activities`);
-    }
-  }
-
-  public sendMessage(
-    destination: string,
-    body: any,
-    headers: Record<string, string> = {}
-  ): void {
-    if (!this.isConnected()) {
-      console.warn("Cannot send message - not connected");
-      return;
-    }
-
-    this.client!.publish({
-      destination,
-      body: JSON.stringify(body),
-      headers,
-    });
+  public isConnected(): boolean {
+    return this.client?.connected ?? false;
   }
 
   public onActivityUpdate(
     callback: (activity: ActivityUpdate) => void
   ): () => void {
     this.activityCallbacks.add(callback);
-
     return () => {
       this.activityCallbacks.delete(callback);
     };
@@ -375,89 +206,145 @@ class StompWebSocketService {
     callback: (connected: boolean) => void
   ): () => void {
     this.connectionCallbacks.add(callback);
-
     return () => {
       this.connectionCallbacks.delete(callback);
     };
   }
 
-  public isConnected(): boolean {
-    return this.client?.connected ?? false;
-  }
+  // TESTING METHODS - Add these for frontend simulation
+  public simulateActivity(activityData?: Partial<ActivityUpdate>): void {
+    const mockActivity: ActivityUpdate = {
+      id: Date.now(),
+      type: "TASK_COMPLETED",
+      description: "John completed task 'Fix login bug'",
+      createdAt: new Date().toISOString(),
+      user: {
+        name: "John Doe",
+        initials: "JD",
+        avatar: null,
+      },
+      project: "E-commerce Platform",
+      task: "Fix login bug",
+      ...activityData,
+    };
 
-  public getConnectionState():
-    | "connecting"
-    | "connected"
-    | "disconnected"
-    | "error" {
-    if (this.isConnecting) return "connecting";
-    if (this.isConnected()) return "connected";
-    return "disconnected";
-  }
+    console.log("🧪 Simulating activity:", mockActivity);
 
-  public subscribeToUserNotifications(): void {
-    if (!this.isConnected()) {
-      console.warn("Cannot subscribe - not connected");
-      return;
-    }
-
-    const user = useAuthStore.getState().user;
-    if (!user) {
-      console.warn("No user found for notifications subscription");
-      return;
-    }
-
-    const destination = websocketConfig.destinations.userNotifications(user.id);
-
-    if (this.subscriptions.has(destination)) {
-      return;
-    }
-
-    const subscription = this.client!.subscribe(
-      destination,
-      (message: Message) => {
-        try {
-          const notification = JSON.parse(message.body);
-          console.log("Received notification:", notification);
-        } catch (error) {
-          console.error("Failed to parse notification:", error);
-        }
+    // Trigger the same callback that real WebSocket messages would
+    this.activityCallbacks.forEach((callback) => {
+      try {
+        callback(mockActivity);
+      } catch (error) {
+        console.error("Error in simulated activity callback:", error);
       }
-    );
-
-    this.subscriptions.set(destination, subscription);
-    console.log(`Subscribed to user ${user.id} notifications`);
+    });
   }
 
-  public subscribeToTeamUpdates(teamId: number): void {
-    if (!this.isConnected()) {
-      console.warn("Cannot subscribe - not connected");
-      return;
-    }
+  public simulateRandomActivity(): void {
+    const activities = [
+      {
+        type: "TASK_CREATED",
+        description: "Sarah created task 'Update user interface'",
+        user: { name: "Sarah Chen", initials: "SC", avatar: null },
+        project: "Mobile App",
+        task: "Update user interface",
+      },
+      {
+        type: "TASK_ASSIGNED",
+        description: "Mike assigned task 'Database optimization' to Emma",
+        user: { name: "Mike Rodriguez", initials: "MR", avatar: null },
+        project: "Backend API",
+        task: "Database optimization",
+      },
+      {
+        type: "COMMENT_ADDED",
+        description: "Emma commented on task 'Fix payment gateway'",
+        user: { name: "Emma Wilson", initials: "EW", avatar: null },
+        project: "E-commerce Platform",
+        task: "Fix payment gateway",
+      },
+      {
+        type: "PROJECT_CREATED",
+        description: "David created project 'Marketing Website'",
+        user: { name: "David Park", initials: "DP", avatar: null },
+        project: "Marketing Website",
+      },
+      {
+        type: "MEMBER_ADDED",
+        description: "Alex added Lisa to project 'Mobile App'",
+        user: { name: "Alex Johnson", initials: "AJ", avatar: null },
+        project: "Mobile App",
+      },
+    ];
 
-    const destination = websocketConfig.destinations.teamUpdates(teamId);
-
-    if (this.subscriptions.has(destination)) {
-      return;
-    }
-
-    const subscription = this.client!.subscribe(
-      destination,
-      (message: Message) => {
-        try {
-          const update = JSON.parse(message.body);
-          console.log("Received team update:", update);
-        } catch (error) {
-          console.error("Failed to parse team update:", error);
-        }
-      }
-    );
-
-    this.subscriptions.set(destination, subscription);
-    console.log(`Subscribed to team ${teamId} updates`);
+    const randomActivity =
+      activities[Math.floor(Math.random() * activities.length)];
+    this.simulateActivity(randomActivity);
   }
 }
 
-export const websocketService = new StompWebSocketService();
+export const websocketService = new SimpleWebSocketService();
 
-export { StompWebSocketService };
+// Add testing utilities to window in development
+if (process.env.NODE_ENV === "development") {
+  (window as any).testRealtime = {
+    // Test single activity
+    triggerActivity: () => {
+      websocketService.simulateActivity();
+    },
+
+    // Test random activity
+    triggerRandom: () => {
+      websocketService.simulateRandomActivity();
+    },
+
+    // Test multiple activities
+    triggerBurst: (count = 5) => {
+      console.log(`🚀 Triggering ${count} activities...`);
+      for (let i = 0; i < count; i++) {
+        setTimeout(() => {
+          websocketService.simulateRandomActivity();
+        }, i * 1000); // 1 second apart
+      }
+    },
+
+    // Test connection status
+    testConnection: () => {
+      console.log("📡 Connection status:", websocketService.isConnected());
+    },
+
+    // Test different activity types
+    testTypes: () => {
+      const types = [
+        "TASK_CREATED",
+        "TASK_COMPLETED",
+        "COMMENT_ADDED",
+        "PROJECT_CREATED",
+      ];
+      console.log("🎯 Testing different activity types...");
+      types.forEach((type, index) => {
+        setTimeout(() => {
+          websocketService.simulateActivity({
+            type,
+            description: `Test ${type} activity`,
+            user: { name: "Test User", initials: "TU", avatar: null },
+            project: "Test Project",
+          });
+        }, index * 2000); // 2 seconds apart
+      });
+    },
+
+    // Test with custom data
+    custom: (data: Partial<ActivityUpdate>) => {
+      websocketService.simulateActivity(data);
+    },
+  };
+
+  console.log("🧪 Realtime testing available in console:");
+  console.log("• testRealtime.triggerActivity() - Single test activity");
+  console.log("• testRealtime.triggerRandom() - Random activity");
+  console.log("• testRealtime.triggerBurst(5) - Multiple activities");
+  console.log("• testRealtime.testTypes() - Test different types");
+  console.log("• testRealtime.testConnection() - Check connection");
+  console.log("• testRealtime.custom({type: 'CUSTOM'}) - Custom activity");
+}

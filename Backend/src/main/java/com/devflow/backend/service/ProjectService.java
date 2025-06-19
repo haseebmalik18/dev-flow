@@ -55,8 +55,8 @@ public class ProjectService {
                 .build();
         projectMemberRepository.save(ownerMember);
 
+        // ✅ ActivityService handles broadcasting
         activityService.createProjectCreatedActivity(owner, project);
-
 
         log.info("Project created: {} by user: {}", project.getName(), owner.getUsername());
         return mapToProjectResponse(project);
@@ -89,11 +89,9 @@ public class ProjectService {
             throw new AuthException("You don't have permission to update this project");
         }
 
-
         Map<String, Object> changes = new HashMap<>();
         ProjectStatus oldStatus = project.getStatus();
         boolean statusChanged = false;
-
 
         if (request.getName() != null && !request.getName().equals(project.getName())) {
             changes.put("name", Map.of("old", project.getName(), "new", request.getName()));
@@ -148,18 +146,14 @@ public class ProjectService {
 
         project = projectRepository.save(project);
 
-
+        // ✅ ActivityService handles broadcasting
         if (!changes.isEmpty()) {
-
             activityService.createProjectUpdatedActivity(user, project, changes);
-
 
             if (statusChanged) {
                 activityService.createProjectStatusChangedActivity(user, project, oldStatus, request.getStatus());
             }
         }
-
-
 
         log.info("Project updated: {} by user: {}", project.getName(), user.getUsername());
         return mapToProjectResponse(project);
@@ -175,9 +169,8 @@ public class ProjectService {
         project.setIsArchived(true);
         projectRepository.save(project);
 
-
+        // ✅ ActivityService handles broadcasting
         activityService.createProjectArchivedActivity(user, project);
-
 
         log.info("Project archived: {} by user: {}", project.getName(), user.getUsername());
     }
@@ -205,9 +198,8 @@ public class ProjectService {
 
         projectMember = projectMemberRepository.save(projectMember);
 
-
+        // ✅ ActivityService handles broadcasting
         activityService.createMemberAddedActivity(inviter, newMember, project, request.getRole());
-
 
         log.info("Member added to project: {} - User: {} by: {}",
                 project.getName(), newMember.getUsername(), inviter.getUsername());
@@ -236,9 +228,8 @@ public class ProjectService {
         User removedUser = member.getUser();
         projectMemberRepository.delete(member);
 
-
+        // ✅ ActivityService handles broadcasting
         activityService.createMemberRemovedActivity(remover, removedUser, project);
-
 
         log.info("Member removed from project: {} - User: {} by: {}",
                 project.getName(), removedUser.getUsername(), remover.getUsername());
@@ -300,8 +291,7 @@ public class ProjectService {
                 .build();
     }
 
-
-
+    // Private helper methods remain the same...
     private Project findProjectWithAccess(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new AuthException("Project not found"));

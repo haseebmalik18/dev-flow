@@ -1,114 +1,61 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { websocketService } from "../services/websocketService";
 import { useAuthStore } from "./useAuthStore";
 
 export const useWebSocket = () => {
   const [isConnected, setIsConnected] = useState(false);
-  const [connectionState, setConnectionState] = useState<
-    "connecting" | "connected" | "disconnected" | "error"
-  >("disconnected");
-  const { isAuthenticated, user } = useAuthStore();
-  const connectionRef = useRef<boolean>(false);
-  const authRef = useRef<boolean>(false);
+  const { isAuthenticated, user, token } = useAuthStore();
 
-  useEffect(() => {
-    if (!isAuthenticated || !user) {
-      if (connectionRef.current) {
-        websocketService.disconnect();
-        connectionRef.current = false;
-        authRef.current = false;
-      }
-      return;
-    }
-
-    if (!connectionRef.current || !authRef.current) {
-      websocketService.connect();
-      connectionRef.current = true;
-      authRef.current = true;
-    }
-
-    const unsubscribeConnection = websocketService.onConnectionStatusChange(
-      (connected) => {
-        setIsConnected(connected);
-        setConnectionState(websocketService.getConnectionState());
-
-        if (connected && user) {
-          setTimeout(() => {
-            websocketService.subscribeToUserNotifications();
-          }, 100);
-        }
-      }
-    );
-
-    setIsConnected(websocketService.isConnected());
-    setConnectionState(websocketService.getConnectionState());
-
-    return () => {
-      unsubscribeConnection();
-    };
-  }, [isAuthenticated, user?.id]);
-
-  useEffect(() => {
-    return () => {
-      if (connectionRef.current) {
-        websocketService.disconnect();
-        connectionRef.current = false;
-        authRef.current = false;
-      }
-    };
+  // Handle connection status changes
+  const handleConnectionChange = useCallback((connected: boolean) => {
+    setIsConnected(connected);
   }, []);
 
-  const connect = () => {
-    if (isAuthenticated && user) {
+  // Setup connection status listener
+  useEffect(() => {
+    const unsubscribe = websocketService.onConnectionStatusChange(
+      handleConnectionChange
+    );
+
+    // Set initial state
+    setIsConnected(websocketService.isConnected());
+
+    return unsubscribe;
+  }, [handleConnectionChange]);
+
+  // Manage connection based on auth state
+  useEffect(() => {
+    if (isAuthenticated && user && token) {
+      console.log("🔄 User authenticated, connecting STOMP WebSocket...");
       websocketService.connect();
-      connectionRef.current = true;
+    } else {
+      console.log(
+        "🔄 User not authenticated, disconnecting STOMP WebSocket..."
+      );
+      websocketService.disconnect();
     }
-  };
 
-  const disconnect = () => {
+    // Cleanup on unmount or auth change
+    return () => {
+      if (!isAuthenticated) {
+        websocketService.disconnect();
+      }
+    };
+  }, [isAuthenticated, user?.id, token]);
+
+  const connect = useCallback(() => {
+    if (isAuthenticated && user && token) {
+      websocketService.connect();
+    }
+  }, [isAuthenticated, user, token]);
+
+  const disconnect = useCallback(() => {
     websocketService.disconnect();
-    connectionRef.current = false;
-    authRef.current = false;
-  };
-
-  const subscribeToProject = (projectId: number) => {
-    websocketService.subscribeToProjectActivities(projectId);
-  };
-
-  const unsubscribeFromProject = (projectId: number) => {
-    websocketService.unsubscribeFromProject(projectId);
-  };
-
-  const subscribeToTask = (taskId: number) => {
-    websocketService.subscribeToTaskActivities(taskId);
-  };
-
-  const unsubscribeFromTask = (taskId: number) => {
-    websocketService.unsubscribeFromTask(taskId);
-  };
-
-  const subscribeToTeam = (teamId: number) => {
-    websocketService.subscribeToTeamUpdates(teamId);
-  };
-
-  const sendMessage = (
-    destination: string,
-    body: any,
-    headers?: Record<string, string>
-  ) => {
-    websocketService.sendMessage(destination, body, headers);
-  };
+  }, []);
 
   return {
     isConnected,
-    connectionState,
     connect,
     disconnect,
-    subscribeToProject,
-    unsubscribeFromProject,
-    subscribeToTask,
-    unsubscribeFromTask,
-    subscribeToTeam,
-    sendMessage,
   };
 };

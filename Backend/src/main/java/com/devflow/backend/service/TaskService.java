@@ -29,6 +29,7 @@ public class TaskService {
     private final ProjectMemberRepository projectMemberRepository;
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
+    private final ActivityService activityService;
 
     public TaskResponse createTask(Long projectId, CreateTaskRequest request, User creator) {
         Project project = findProjectWithAccess(projectId, creator);
@@ -68,12 +69,11 @@ public class TaskService {
             addTaskDependencies(task, request.getDependencyIds(), creator);
         }
 
-        Activity activity = Activity.taskCreated(creator, task);
-        activityRepository.save(activity);
+        // ✅ ActivityService handles broadcasting
+        activityService.createTaskCreatedActivity(creator, task);
 
         if (task.getAssignee() != null && !task.getAssignee().equals(creator)) {
-            Activity assignActivity = Activity.taskAssigned(creator, task, task.getAssignee());
-            activityRepository.save(assignActivity);
+            activityService.createTaskAssignedActivity(creator, task.getAssignee(), task);
         }
 
         log.info("Task created: {} by user: {} in project: {}",
@@ -97,6 +97,7 @@ public class TaskService {
 
         boolean statusChanged = false;
         TaskStatus oldStatus = task.getStatus();
+        Priority oldPriority = task.getPriority();
 
         if (request.getTitle() != null) {
             task.setTitle(request.getTitle());
@@ -115,7 +116,7 @@ public class TaskService {
                 task.setCompletedDate(null);
             }
         }
-        if (request.getPriority() != null) {
+        if (request.getPriority() != null && !request.getPriority().equals(oldPriority)) {
             task.setPriority(request.getPriority());
         }
         if (request.getDueDate() != null) {
@@ -137,9 +138,8 @@ public class TaskService {
 
             if (!newAssignee.equals(oldAssignee)) {
                 task.setAssignee(newAssignee);
-
-                Activity assignActivity = Activity.taskAssigned(user, task, newAssignee);
-                activityRepository.save(assignActivity);
+                // ✅ ActivityService handles broadcasting
+                activityService.createTaskAssignedActivity(user, newAssignee, task);
             }
         }
 
@@ -150,9 +150,17 @@ public class TaskService {
 
         task = taskRepository.save(task);
 
-        if (statusChanged && task.getStatus() == TaskStatus.DONE) {
-            Activity activity = Activity.taskCompleted(user, task);
-            activityRepository.save(activity);
+        // ✅ ActivityService handles broadcasting
+        if (statusChanged) {
+            activityService.createTaskStatusChangedActivity(user, task, oldStatus, request.getStatus());
+
+            if (task.getStatus() == TaskStatus.DONE) {
+                activityService.createTaskCompletedActivity(user, task);
+            }
+        }
+
+        if (request.getPriority() != null && !request.getPriority().equals(oldPriority)) {
+            activityService.createTaskPriorityChangedActivity(user, task, oldPriority, request.getPriority());
         }
 
         if (task.getParentTask() != null) {
@@ -232,8 +240,8 @@ public class TaskService {
         task.setAssignee(assignee);
         task = taskRepository.save(task);
 
-        Activity activity = Activity.taskAssigned(user, task, assignee);
-        activityRepository.save(activity);
+        // ✅ ActivityService handles broadcasting
+        activityService.createTaskAssignedActivity(user, assignee, task);
 
         log.info("Task assigned: {} to user: {} by: {}",
                 task.getTitle(), assignee.getUsername(), user.getUsername());
@@ -263,11 +271,13 @@ public class TaskService {
             throw new AuthException("You don't have permission to complete this task");
         }
 
+        TaskStatus oldStatus = task.getStatus();
         task.completeTask();
         task = taskRepository.save(task);
 
-        Activity activity = Activity.taskCompleted(user, task);
-        activityRepository.save(activity);
+        // ✅ ActivityService handles broadcasting
+        activityService.createTaskStatusChangedActivity(user, task, oldStatus, TaskStatus.DONE);
+        activityService.createTaskCompletedActivity(user, task);
 
         if (task.getParentTask() != null) {
             updateParentTaskProgress(task.getParentTask());
@@ -285,12 +295,16 @@ public class TaskService {
             throw new AuthException("You don't have permission to reopen this task");
         }
 
+        TaskStatus oldStatus = task.getStatus();
         task.setStatus(TaskStatus.TODO);
         task.setCompletedDate(null);
         if (task.getProgress() == 100) {
             task.setProgress(0);
         }
         task = taskRepository.save(task);
+
+        // ✅ ActivityService handles broadcasting
+        activityService.createTaskStatusChangedActivity(user, task, oldStatus, TaskStatus.TODO);
 
         if (task.getParentTask() != null) {
             updateParentTaskProgress(task.getParentTask());
@@ -360,6 +374,8 @@ public class TaskService {
             }
 
             boolean updated = false;
+            TaskStatus oldStatus = task.getStatus();
+            Priority oldPriority = task.getPriority();
 
             if (request.getStatus() != null && !request.getStatus().equals(task.getStatus())) {
                 task.setStatus(request.getStatus());
@@ -367,11 +383,20 @@ public class TaskService {
                     task.completeTask();
                 }
                 updated = true;
+
+                // ✅ ActivityService handles broadcasting
+                activityService.createTaskStatusChangedActivity(user, task, oldStatus, request.getStatus());
+                if (request.getStatus() == TaskStatus.DONE) {
+                    activityService.createTaskCompletedActivity(user, task);
+                }
             }
 
             if (request.getPriority() != null && !request.getPriority().equals(task.getPriority())) {
                 task.setPriority(request.getPriority());
                 updated = true;
+
+                // ✅ ActivityService handles broadcasting
+                activityService.createTaskPriorityChangedActivity(user, task, oldPriority, request.getPriority());
             }
 
             if (request.getAssigneeId() != null) {
@@ -379,6 +404,9 @@ public class TaskService {
                 if (!assignee.equals(task.getAssignee())) {
                     task.setAssignee(assignee);
                     updated = true;
+
+                    // ✅ ActivityService handles broadcasting
+                    activityService.createTaskAssignedActivity(user, assignee, task);
                 }
             }
 
@@ -555,7 +583,7 @@ public class TaskService {
         return mapToTaskResponse(task);
     }
 
-
+    // Private helper methods
     private Project findProjectWithAccess(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new AuthException("Project not found"));

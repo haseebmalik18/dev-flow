@@ -25,25 +25,43 @@ import { TaskDetailPage } from "./pages/tasks/TaskDetailPage";
 import { InvitationResponsePage } from "./pages/invitations/InvitationResponsePage";
 
 import { useAuthStore } from "./hooks/useAuthStore";
+import { useWebSocket } from "./hooks/useWebSocket";
+
+// Type guard for axios-like errors
+function isAxiosError(
+  error: unknown
+): error is { response: { status: number } } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "response" in error &&
+    typeof (error as { response?: unknown }).response === "object" &&
+    (error as { response?: unknown }).response !== null &&
+    "status" in (error as { response: { status?: unknown } }).response
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60 * 1000,
-      retry: (failureCount, error: any) => {
-        if (
-          error?.response?.status === 401 ||
-          error?.response?.status === 403
-        ) {
-          return false;
+      retry: (failureCount, error: unknown) => {
+        if (isAxiosError(error)) {
+          const status = error.response.status;
+          if (status === 401 || status === 403) {
+            return false;
+          }
         }
         return failureCount < 2;
       },
     },
     mutations: {
-      retry: (failureCount, error: any) => {
-        if (error?.response?.status >= 400 && error?.response?.status < 500) {
-          return false;
+      retry: (failureCount, error: unknown) => {
+        if (isAxiosError(error)) {
+          const status = error.response.status;
+          if (status >= 400 && status < 500) {
+            return false;
+          }
         }
         return failureCount < 1;
       },
@@ -68,6 +86,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 function App() {
+  useWebSocket();
   return (
     <QueryClientProvider client={queryClient}>
       <Router>

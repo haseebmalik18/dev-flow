@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { websocketService } from "../services/websocketService";
-import type { ActivityUpdate } from "../services/websocketService";
-import { useWebSocket } from "./useWebsocket";
+import { websocketService } from "../services/webSocketService";
+import type { ActivityUpdate } from "../services/webSocketService";
+import { useWebSocket } from "./useWebSocket";
 import type { ActivityItem } from "../services/dashboardService";
 
 export const useRealtimeActivity = () => {
@@ -13,19 +13,38 @@ export const useRealtimeActivity = () => {
   const queryClient = useQueryClient();
   const { isConnected } = useWebSocket();
 
+  // Handle new activity updates from STOMP
   const handleNewActivity = useCallback(
     (activity: ActivityUpdate) => {
-      console.log("Processing new activity in useRealtimeActivity:", activity);
+      console.log("📥 Processing new STOMP activity:", activity);
 
+      // Add to realtime activities list (prevent duplicates)
       setRealtimeActivities((prev) => {
-        const updated = [activity, ...prev].slice(0, 50);
-        return updated;
+        const exists = prev.some((a) => a.id === activity.id);
+        if (exists) return prev;
+        return [activity, ...prev].slice(0, 50);
       });
 
       setHasNewActivity(true);
 
+      // Update React Query cache for dashboard activity
       queryClient.setQueryData(["dashboard", "activity"], (oldData: any) => {
-        if (!oldData) return oldData;
+        // Handle case where oldData might not be an array or might be undefined
+        if (!oldData || !Array.isArray(oldData)) {
+          console.log(
+            "📝 Dashboard activity cache is empty or invalid, creating new array"
+          );
+          const newActivityItem: ActivityItem = {
+            id: activity.id,
+            type: activity.type,
+            description: activity.description,
+            createdAt: activity.createdAt,
+            user: activity.user,
+            project: activity.project,
+            task: activity.task,
+          };
+          return [newActivityItem];
+        }
 
         const newActivityItem: ActivityItem = {
           id: activity.id,
@@ -37,25 +56,23 @@ export const useRealtimeActivity = () => {
           task: activity.task,
         };
 
+        // Prevent duplicates
+        const exists = oldData.some(
+          (item: ActivityItem) => item.id === activity.id
+        );
+        if (exists) {
+          console.log("🔄 Activity already exists in cache, skipping");
+          return oldData;
+        }
+
+        console.log("✅ Adding new activity to cache");
         return [newActivityItem, ...oldData].slice(0, 20);
       });
 
-      queryClient.invalidateQueries({
-        queryKey: ["dashboard", "activity"],
-        exact: false,
-      });
-
+      // Invalidate dashboard queries after a short delay
       setTimeout(() => {
         queryClient.invalidateQueries({
           queryKey: ["dashboard", "stats"],
-          exact: false,
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["dashboard", "projects"],
-          exact: false,
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["dashboard", "tasks"],
           exact: false,
         });
       }, 1000);
@@ -63,63 +80,42 @@ export const useRealtimeActivity = () => {
     [queryClient]
   );
 
+  // Setup STOMP activity listener when connected
   useEffect(() => {
     if (!isConnected) {
-      console.log("WebSocket not connected, skipping activity subscription");
+      console.log("❌ STOMP not connected, skipping activity subscription");
       return;
     }
 
-    console.log("Setting up activity update listener");
+    console.log("✅ Setting up STOMP activity listener");
     const unsubscribe = websocketService.onActivityUpdate(handleNewActivity);
 
     return () => {
-      console.log("Cleaning up activity update listener");
+      console.log("🧹 Cleaning up STOMP activity listener");
       unsubscribe();
     };
   }, [isConnected, handleNewActivity]);
 
+  // Clear activities when disconnected
+  useEffect(() => {
+    if (!isConnected && realtimeActivities.length > 0) {
+      console.log("🧹 STOMP disconnected, clearing realtime activities");
+      setRealtimeActivities([]);
+      setHasNewActivity(false);
+    }
+  }, [isConnected, realtimeActivities.length]);
+
   const markAsRead = useCallback(() => {
-    console.log("Marking activities as read");
+    console.log("✅ Marking STOMP activities as read");
     setHasNewActivity(false);
     setRealtimeActivities([]);
-
     localStorage.setItem("lastActivitySeen", new Date().toISOString());
-  }, []);
-
-  const subscribeToProject = useCallback((projectId: number) => {
-    console.log(
-      `Project ${projectId} subscription requested - not implemented yet`
-    );
-    // websocketService.subscribeToProjectActivities(projectId);
-  }, []);
-
-  const unsubscribeFromProject = useCallback((projectId: number) => {
-    console.log(
-      `Unsubscribe from project ${projectId} requested - not implemented yet`
-    );
-    // websocketService.unsubscribeFromProject(projectId);
-  }, []);
-
-  const subscribeToTask = useCallback((taskId: number) => {
-    console.log(`Task ${taskId} subscription requested - not implemented yet`);
-    // websocketService.subscribeToTaskActivities(taskId);
-  }, []);
-
-  const unsubscribeFromTask = useCallback((taskId: number) => {
-    console.log(
-      `Unsubscribe from task ${taskId} requested - not implemented yet`
-    );
-    // websocketService.unsubscribeFromTask(taskId);
   }, []);
 
   return {
     realtimeActivities,
     hasNewActivity,
     markAsRead,
-    subscribeToProject,
-    unsubscribeFromProject,
-    subscribeToTask,
-    unsubscribeFromTask,
     isConnected,
   };
 };
