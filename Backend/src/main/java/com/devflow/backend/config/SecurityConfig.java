@@ -45,6 +45,13 @@ public class SecurityConfig {
                         // Public health check
                         .requestMatchers("/api/v1/health").permitAll()
 
+                        // WebSocket endpoints (authentication handled in WebSocket config)
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers("/app/**").permitAll()
+                        .requestMatchers("/topic/**").permitAll()
+                        .requestMatchers("/queue/**").permitAll()
+                        .requestMatchers("/user/**").permitAll()
+
                         // Public invitation endpoints (for email links)
                         .requestMatchers(HttpMethod.GET, "/api/v1/invitations/*").permitAll()
 
@@ -114,7 +121,7 @@ public class SecurityConfig {
                 "PATCH"
         ));
 
-        // Allow specific headers including file upload headers
+
         configuration.setAllowedHeaders(List.of(
                 "*",
                 "Authorization",
@@ -125,10 +132,14 @@ public class SecurityConfig {
                 "Accept",
                 "Origin",
                 "Access-Control-Request-Method",
-                "Access-Control-Request-Headers"
+                "Access-Control-Request-Headers",
+                "Sec-WebSocket-Protocol",
+                "Sec-WebSocket-Version",
+                "Sec-WebSocket-Key",
+                "Sec-WebSocket-Extensions"
         ));
 
-        // Expose headers that frontend might need
+
         configuration.setExposedHeaders(List.of(
                 "Authorization",
                 "Content-Disposition",

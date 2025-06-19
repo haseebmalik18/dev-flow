@@ -20,7 +20,8 @@ export interface WebSocketMessage {
     | "CONNECTION_STATUS"
     | "HEARTBEAT"
     | "SUBSCRIBE"
-    | "UNSUBSCRIBE";
+    | "UNSUBSCRIBE"
+    | "AUTH";
   data: any;
   timestamp: string;
   subscription?: string;
@@ -41,14 +42,7 @@ class NativeWebSocketService {
   constructor() {}
 
   private getWsUrl(): string {
-    const WS_URL = "http://localhost:3000/ws";
-    const token = useAuthStore.getState().token;
-
-    if (token) {
-      const separator = WS_URL.includes("?") ? "&" : "?";
-      return `${WS_URL}${separator}token=${encodeURIComponent(token)}`;
-    }
-
+    const WS_URL = "ws://localhost:3000/ws";
     return WS_URL;
   }
 
@@ -61,12 +55,16 @@ class NativeWebSocketService {
 
     try {
       const wsUrl = this.getWsUrl();
-      console.log(
-        "Connecting to WebSocket:",
-        wsUrl.replace(/token=[^&]+/, "token=***")
-      );
+      console.log("Connecting to WebSocket:", wsUrl);
 
       this.ws = new WebSocket(wsUrl);
+
+      const token = useAuthStore.getState().token;
+      if (token) {
+        this.ws.addEventListener("open", () => {
+          this.sendAuthMessage(token);
+        });
+      }
 
       this.ws.onopen = this.onOpen.bind(this);
       this.ws.onmessage = this.onMessage.bind(this);
@@ -78,6 +76,14 @@ class NativeWebSocketService {
     }
   }
 
+  private sendAuthMessage(token: string): void {
+    this.send({
+      type: "AUTH",
+      data: { token: `Bearer ${token}` },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   private onOpen(): void {
     console.log("WebSocket connected");
     this.isConnecting = false;
@@ -85,9 +91,7 @@ class NativeWebSocketService {
     this.notifyConnectionStatus(true);
 
     this.startHeartbeat();
-
     this.resubscribeAll();
-
     this.subscribeToGlobalActivities();
   }
 
@@ -105,7 +109,7 @@ class NativeWebSocketService {
         case "HEARTBEAT":
           break;
         default:
-          console.log("Unknown message type:", message.type);
+          console.log("Unknown message type:", message.type, message);
       }
     } catch (error) {
       console.error("Failed to parse WebSocket message:", error);
@@ -120,6 +124,7 @@ class NativeWebSocketService {
 
     if (
       event.code !== 1000 &&
+      event.code !== 1008 &&
       this.reconnectAttempts < this.maxReconnectAttempts
     ) {
       this.attemptReconnect();
@@ -186,7 +191,6 @@ class NativeWebSocketService {
 
   private handleActivityUpdate(activity: ActivityUpdate): void {
     localStorage.setItem("lastActivitySeen", new Date().toISOString());
-
     this.activityCallbacks.forEach((callback) => callback(activity));
   }
 
