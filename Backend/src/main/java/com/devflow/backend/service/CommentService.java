@@ -4,6 +4,7 @@ import com.devflow.backend.dto.comment.CommentDTOs.*;
 import com.devflow.backend.entity.*;
 import com.devflow.backend.exception.AuthException;
 import com.devflow.backend.repository.*;
+import com.devflow.backend.service.ActivityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -29,6 +30,7 @@ public class CommentService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
+    private final ActivityService activityService;
 
     public CommentResponse createComment(CreateCommentRequest request, User author) {
         Comment comment = Comment.builder()
@@ -76,8 +78,16 @@ public class CommentService {
 
 
         if (comment.getTask() != null) {
-            Activity activity = Activity.taskCommented(author, comment.getTask());
-            activityRepository.save(activity);
+            activityService.createCommentAddedActivity(author, comment, comment.getTask());
+        }
+
+
+        if (!comment.getMentionedUsers().isEmpty()) {
+            for (User mentionedUser : comment.getMentionedUsers()) {
+                if (comment.getTask() != null) {
+                    activityService.createCommentMentionedActivity(author, mentionedUser, comment, comment.getTask());
+                }
+            }
         }
 
         log.info("Comment created by user: {} on {}",

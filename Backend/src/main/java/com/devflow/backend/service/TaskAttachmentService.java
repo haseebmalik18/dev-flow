@@ -4,6 +4,7 @@ import com.devflow.backend.dto.attachment.AttachmentDTOs.*;
 import com.devflow.backend.entity.*;
 import com.devflow.backend.exception.AuthException;
 import com.devflow.backend.repository.*;
+import com.devflow.backend.service.ActivityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -34,8 +35,8 @@ public class TaskAttachmentService {
     private final TaskAttachmentRepository attachmentRepository;
     private final TaskRepository taskRepository;
     private final ActivityRepository activityRepository;
+    private final ActivityService activityService;
     private final S3FileStorageService s3Service;
-
 
     private static final Set<String> PREVIEWABLE_IMAGE_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml"
@@ -82,15 +83,8 @@ public class TaskAttachmentService {
 
             attachment = attachmentRepository.save(attachment);
 
-            Activity activity = Activity.builder()
-                    .type(ActivityType.FILE_UPLOADED)
-                    .description(String.format("%s uploaded file \"%s\" to task \"%s\"",
-                            user.getFullName(), attachment.getOriginalFileName(), task.getTitle()))
-                    .user(user)
-                    .project(task.getProject())
-                    .task(task)
-                    .build();
-            activityRepository.save(activity);
+
+            activityService.createFileUploadedActivity(user, attachment.getOriginalFileName(), task);
 
             log.info("File uploaded successfully: {} by user: {} to task: {}",
                     attachment.getOriginalFileName(), user.getUsername(), task.getTitle());
@@ -127,11 +121,9 @@ public class TaskAttachmentService {
         previewData.put("isPreviewable", isPreviewable(attachment.getContentType()));
         previewData.put("previewType", getPreviewType(attachment.getContentType()));
 
-    
-        String baseUrl = "http://localhost:3000/api/v1"; // This should come from config
+        String baseUrl = "http://localhost:3000/api/v1";
         String streamUrl = String.format("%s/attachments/%d/stream", baseUrl, attachment.getId());
         previewData.put("streamUrl", streamUrl);
-
 
         previewData.put("downloadUrl", attachment.getS3Url());
         previewData.put("urlExpiresAt", attachment.getUrlExpiresAt());
@@ -142,12 +134,10 @@ public class TaskAttachmentService {
     public StreamData streamAttachment(Long attachmentId, User user) throws IOException {
         TaskAttachment attachment = findAttachmentWithAccess(attachmentId, user);
 
-
         byte[] fileData = s3Service.getFileData(attachment.getS3Key());
 
         return new StreamData(fileData, attachment.getContentType(), attachment.getOriginalFileName());
     }
-
 
     private boolean isPreviewable(String contentType) {
         if (contentType == null) return false;
@@ -201,6 +191,9 @@ public class TaskAttachmentService {
         String freshUrl = s3Service.generatePresignedUrl(attachment.getS3Key());
         updateAttachmentUrlAsync(attachment.getId(), freshUrl);
 
+
+        activityService.createFileDownloadedActivity(user, attachment);
+
         log.info("Download URL generated for attachment: {} by user: {}",
                 attachment.getOriginalFileName(), user.getUsername());
 
@@ -218,15 +211,8 @@ public class TaskAttachmentService {
         attachmentRepository.save(attachment);
         deleteFromS3Async(attachment.getS3Key());
 
-        Activity activity = Activity.builder()
-                .type(ActivityType.PROJECT_UPDATED)
-                .description(String.format("%s deleted file \"%s\" from task \"%s\"",
-                        user.getFullName(), attachment.getOriginalFileName(), attachment.getTask().getTitle()))
-                .user(user)
-                .project(attachment.getTask().getProject())
-                .task(attachment.getTask())
-                .build();
-        activityRepository.save(activity);
+
+        activityService.createFileDeletedActivity(user, attachment);
 
         log.info("Attachment deleted: {} by user: {} from task: {}",
                 attachment.getOriginalFileName(), user.getUsername(), attachment.getTask().getTitle());
@@ -298,8 +284,7 @@ public class TaskAttachmentService {
                 .collect(Collectors.toList());
     }
 
-
-    @Scheduled(fixedRate = 3600000) 
+    @Scheduled(fixedRate = 3600000)
     @Transactional
     public void refreshExpiringUrls() {
         LocalDateTime threshold = LocalDateTime.now().plusHours(2);
@@ -319,7 +304,7 @@ public class TaskAttachmentService {
         }
     }
 
-    @Scheduled(fixedRate = 86400000) 
+    @Scheduled(fixedRate = 86400000)
     @Transactional
     public void cleanupOldDeletedAttachments() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
@@ -327,7 +312,6 @@ public class TaskAttachmentService {
         log.info("Cleaned up old deleted attachments older than {}", cutoff);
     }
 
- 
     private Task findTaskWithAccess(Long taskId, User user) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new AuthException("Task not found"));
@@ -357,7 +341,7 @@ public class TaskAttachmentService {
         if (task.getCreator().equals(user)) {
             return true;
         }
-        return true; 
+        return true;
     }
 
     private boolean canUserDeleteAttachment(User user, TaskAttachment attachment) {
@@ -421,7 +405,6 @@ public class TaskAttachmentService {
         if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
         return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
-
 
     private AttachmentResponse mapToAttachmentResponse(TaskAttachment attachment) {
         return AttachmentResponse.builder()

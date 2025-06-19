@@ -13,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -27,13 +29,13 @@ public class ProjectService {
     private final UserRepository userRepository;
     private final TaskRepository taskRepository;
     private final ActivityRepository activityRepository;
+    private final ActivityService activityService;
 
     public ProjectResponse createProject(CreateProjectRequest request, User owner) {
         Project project = Project.builder()
                 .name(request.getName())
                 .description(request.getDescription())
                 .priority(request.getPriority() != null ? request.getPriority() : Priority.MEDIUM)
-
                 .startDate(request.getStartDate() != null ?
                         request.getStartDate().atStartOfDay() : null)
                 .dueDate(request.getDueDate() != null ?
@@ -46,7 +48,6 @@ public class ProjectService {
 
         project = projectRepository.save(project);
 
-
         ProjectMember ownerMember = ProjectMember.builder()
                 .project(project)
                 .user(owner)
@@ -54,12 +55,10 @@ public class ProjectService {
                 .build();
         projectMemberRepository.save(ownerMember);
 
+        activityService.createProjectCreatedActivity(owner, project);
 
-        Activity activity = Activity.projectCreated(owner, project);
-        activityRepository.save(activity);
 
         log.info("Project created: {} by user: {}", project.getName(), owner.getUsername());
-
         return mapToProjectResponse(project);
     }
 
@@ -91,57 +90,78 @@ public class ProjectService {
         }
 
 
-        if (request.getName() != null) {
+        Map<String, Object> changes = new HashMap<>();
+        ProjectStatus oldStatus = project.getStatus();
+        boolean statusChanged = false;
+
+
+        if (request.getName() != null && !request.getName().equals(project.getName())) {
+            changes.put("name", Map.of("old", project.getName(), "new", request.getName()));
             project.setName(request.getName());
         }
-        if (request.getDescription() != null) {
+
+        if (request.getDescription() != null && !request.getDescription().equals(project.getDescription())) {
+            changes.put("description", "updated");
             project.setDescription(request.getDescription());
         }
-        if (request.getStatus() != null) {
-            ProjectStatus oldStatus = project.getStatus();
+
+        if (request.getStatus() != null && !request.getStatus().equals(oldStatus)) {
+            changes.put("status", Map.of("old", oldStatus.name(), "new", request.getStatus().name()));
             project.setStatus(request.getStatus());
+            statusChanged = true;
 
             if (request.getStatus() == ProjectStatus.COMPLETED && oldStatus != ProjectStatus.COMPLETED) {
                 project.setCompletedDate(LocalDateTime.now());
                 project.setProgress(100);
             }
         }
-        if (request.getPriority() != null) {
+
+        if (request.getPriority() != null && !request.getPriority().equals(project.getPriority())) {
+            changes.put("priority", Map.of("old", project.getPriority().name(), "new", request.getPriority().name()));
             project.setPriority(request.getPriority());
         }
 
         if (request.getStartDate() != null) {
             project.setStartDate(request.getStartDate().atStartOfDay());
+            changes.put("startDate", "updated");
         }
         if (request.getDueDate() != null) {
             project.setDueDate(request.getDueDate().atTime(23, 59, 59));
+            changes.put("dueDate", "updated");
         }
-        if (request.getColor() != null) {
+        if (request.getColor() != null && !request.getColor().equals(project.getColor())) {
+            changes.put("color", Map.of("old", project.getColor(), "new", request.getColor()));
             project.setColor(request.getColor());
         }
         if (request.getBudget() != null) {
             project.setBudget(request.getBudget());
+            changes.put("budget", "updated");
         }
         if (request.getSpent() != null) {
             project.setSpent(request.getSpent());
+            changes.put("spent", "updated");
         }
-        if (request.getProgress() != null) {
+        if (request.getProgress() != null && !request.getProgress().equals(project.getProgress())) {
+            changes.put("progress", Map.of("old", project.getProgress(), "new", request.getProgress()));
             project.setProgress(request.getProgress());
         }
 
         project = projectRepository.save(project);
 
 
-        Activity activity = Activity.builder()
-                .type(ActivityType.PROJECT_UPDATED)
-                .description(String.format("%s updated project \"%s\"", user.getFullName(), project.getName()))
-                .user(user)
-                .project(project)
-                .build();
-        activityRepository.save(activity);
+        if (!changes.isEmpty()) {
+
+            activityService.createProjectUpdatedActivity(user, project, changes);
+
+
+            if (statusChanged) {
+                activityService.createProjectStatusChangedActivity(user, project, oldStatus, request.getStatus());
+            }
+        }
+
+
 
         log.info("Project updated: {} by user: {}", project.getName(), user.getUsername());
-
         return mapToProjectResponse(project);
     }
 
@@ -156,13 +176,8 @@ public class ProjectService {
         projectRepository.save(project);
 
 
-        Activity activity = Activity.builder()
-                .type(ActivityType.PROJECT_ARCHIVED)
-                .description(String.format("%s archived project \"%s\"", user.getFullName(), project.getName()))
-                .user(user)
-                .project(project)
-                .build();
-        activityRepository.save(activity);
+        activityService.createProjectArchivedActivity(user, project);
+
 
         log.info("Project archived: {} by user: {}", project.getName(), user.getUsername());
     }
@@ -191,8 +206,8 @@ public class ProjectService {
         projectMember = projectMemberRepository.save(projectMember);
 
 
-        Activity activity = Activity.memberAdded(inviter, newMember, project);
-        activityRepository.save(activity);
+        activityService.createMemberAddedActivity(inviter, newMember, project, request.getRole());
+
 
         log.info("Member added to project: {} - User: {} by: {}",
                 project.getName(), newMember.getUsername(), inviter.getUsername());
@@ -221,15 +236,9 @@ public class ProjectService {
         User removedUser = member.getUser();
         projectMemberRepository.delete(member);
 
-        Activity activity = Activity.builder()
-                .type(ActivityType.MEMBER_REMOVED)
-                .description(String.format("%s removed %s from the project",
-                        remover.getFullName(), removedUser.getFullName()))
-                .user(remover)
-                .project(project)
-                .targetUser(removedUser)
-                .build();
-        activityRepository.save(activity);
+
+        activityService.createMemberRemovedActivity(remover, removedUser, project);
+
 
         log.info("Member removed from project: {} - User: {} by: {}",
                 project.getName(), removedUser.getUsername(), remover.getUsername());
@@ -262,7 +271,6 @@ public class ProjectService {
                 .average()
                 .orElse(0.0);
 
-
         List<Task> allTasks = userProjects.stream()
                 .flatMap(p -> p.getTasks().stream())
                 .filter(t -> !t.getIsArchived())
@@ -291,6 +299,7 @@ public class ProjectService {
                 .teamMembersCount(teamMembersCount)
                 .build();
     }
+
 
 
     private Project findProjectWithAccess(Long projectId, User user) {
