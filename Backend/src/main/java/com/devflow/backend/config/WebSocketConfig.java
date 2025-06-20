@@ -23,6 +23,8 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Configuration
 @EnableWebSocketMessageBroker
@@ -34,21 +36,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
 
+    // Track authenticated sessions by user
+    private final Map<String, String> sessionToUsernameMap = new ConcurrentHashMap<>();
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-
         config.enableSimpleBroker("/topic", "/queue", "/user");
-
-
         config.setApplicationDestinationPrefixes("/app");
-
-
         config.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(
                         "http://localhost:3000",
@@ -67,16 +66,37 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
                 if (accessor != null) {
+                    String sessionId = accessor.getSessionId();
+
                     log.debug("Processing STOMP command: {} for session: {} with destination: {}",
-                            accessor.getCommand(), accessor.getSessionId(), accessor.getDestination());
+                            accessor.getCommand(), sessionId, accessor.getDestination());
 
                     if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                         handleAuthentication(accessor);
+                    } else if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
+                        handleDisconnection(accessor);
                     } else if (StompCommand.SEND.equals(accessor.getCommand()) ||
                             StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
 
+                        // Check if session is already authenticated
                         if (accessor.getUser() == null) {
-                            handleAuthentication(accessor);
+                            String username = sessionToUsernameMap.get(sessionId);
+                            if (username != null) {
+                                // Re-authenticate from stored session
+                                try {
+                                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                                    UsernamePasswordAuthenticationToken authToken =
+                                            new UsernamePasswordAuthenticationToken(
+                                                    userDetails, null, userDetails.getAuthorities());
+                                    accessor.setUser(authToken);
+                                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                                } catch (Exception e) {
+                                    log.warn("Failed to re-authenticate session {}: {}", sessionId, e.getMessage());
+                                    handleAuthentication(accessor);
+                                }
+                            } else {
+                                handleAuthentication(accessor);
+                            }
                         }
                     }
                 }
@@ -88,7 +108,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private void handleAuthentication(StompHeaderAccessor accessor) {
         try {
-
+            String sessionId = accessor.getSessionId();
             List<String> authorization = accessor.getNativeHeader("Authorization");
             String token = null;
 
@@ -96,33 +116,45 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 String authHeader = authorization.get(0);
                 if (authHeader != null && authHeader.startsWith("Bearer ")) {
                     token = authHeader.substring(7);
-                    log.debug("Found Authorization header with Bearer token");
+                    log.debug("Found Authorization header with Bearer token for session: {}", sessionId);
                 }
             }
-
 
             if (token == null) {
                 List<String> tokenHeaders = accessor.getNativeHeader("token");
                 if (tokenHeaders != null && !tokenHeaders.isEmpty()) {
                     token = tokenHeaders.get(0);
-                    log.debug("Found token header");
+                    log.debug("Found token header for session: {}", sessionId);
                 }
             }
 
             if (token != null && !token.trim().isEmpty()) {
-                authenticateWithToken(token, accessor);
+                String username = authenticateWithToken(token, accessor);
+                if (username != null) {
+                    // Store session-to-username mapping
+                    sessionToUsernameMap.put(sessionId, username);
+                    log.info("✅ WebSocket connection authenticated for user: {} (session: {})", username, sessionId);
+                } else {
+                    log.warn("❌ Failed to authenticate session: {}", sessionId);
+                }
             } else {
-                log.warn("No authentication token found for WebSocket connection from session: {}",
-                        accessor.getSessionId());
+                log.warn("❌ No authentication token found for WebSocket connection from session: {}", sessionId);
             }
 
         } catch (Exception e) {
-            log.error("WebSocket authentication failed for session {}: {}",
-                    accessor.getSessionId(), e.getMessage(), e);
+            log.error("WebSocket authentication failed for session {}: {}", accessor.getSessionId(), e.getMessage(), e);
         }
     }
 
-    private void authenticateWithToken(String token, StompHeaderAccessor accessor) {
+    private void handleDisconnection(StompHeaderAccessor accessor) {
+        String sessionId = accessor.getSessionId();
+        String username = sessionToUsernameMap.remove(sessionId);
+        if (username != null) {
+            log.info("🔌 WebSocket session disconnected for user: {} (session: {})", username, sessionId);
+        }
+    }
+
+    private String authenticateWithToken(String token, StompHeaderAccessor accessor) {
         try {
             String username = jwtService.extractUsername(token);
 
@@ -137,8 +169,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                     accessor.setUser(authToken);
 
-                    log.info("WebSocket connection authenticated for user: {} (session: {})",
-                            username, accessor.getSessionId());
+                    return username;
                 } else {
                     log.warn("Invalid WebSocket token for user: {} (session: {})",
                             username, accessor.getSessionId());
@@ -151,5 +182,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             log.error("WebSocket token authentication failed for session {}: {}",
                     accessor.getSessionId(), e.getMessage());
         }
+        return null;
     }
 }
