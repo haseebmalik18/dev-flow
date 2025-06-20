@@ -28,23 +28,19 @@ public class RealtimeActivityService {
     private final ProjectMemberRepository projectMemberRepository;
     private final UserRepository userRepository;
 
-    // Track subscription state
     private final Map<String, ActivitySubscription> activeSubscriptions = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> userSubscriptions = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> projectSubscriptions = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> taskSubscriptions = new ConcurrentHashMap<>();
 
-    // ✅ MAIN BROADCAST METHOD - This is called by ActivityService
     public void broadcastActivity(Activity activity) {
         try {
             ActivityBroadcast broadcast = createActivityBroadcast(activity);
 
-            log.debug("🚀 Broadcasting activity: {} to all subscribers", activity.getId());
+            log.debug("Broadcasting activity: {} to all subscribers", activity.getId());
 
-            // ✅ FIXED: Always broadcast to global subscribers
             broadcastToGlobalSubscribers(broadcast);
 
-            // Also broadcast to specific project/task subscribers
             if (activity.getProject() != null) {
                 broadcastToProjectSubscribers(activity.getProject().getId(), broadcast);
             }
@@ -53,18 +49,16 @@ public class RealtimeActivityService {
                 broadcastToTaskSubscribers(activity.getTask().getId(), broadcast);
             }
 
-            log.debug("✅ Activity broadcast completed for activity: {}", activity.getId());
+            log.debug("Activity broadcast completed for activity: {}", activity.getId());
 
         } catch (Exception e) {
-            log.error("❌ Failed to broadcast activity {}: {}", activity.getId(), e.getMessage(), e);
+            log.error("Failed to broadcast activity {}: {}", activity.getId(), e.getMessage(), e);
         }
     }
 
-    // ✅ CRITICAL FIX: Global subscribers broadcasting with correct STOMP destination
     private void broadcastToGlobalSubscribers(ActivityBroadcast broadcast) {
-        log.debug("📡 Broadcasting to global subscribers...");
+        log.debug("Broadcasting to global subscribers...");
 
-        // Get all users who have global subscriptions
         Set<Long> globalSubscriberUserIds = userSubscriptions.entrySet().stream()
                 .filter(entry -> {
                     Set<String> userSubs = entry.getValue();
@@ -77,11 +71,10 @@ public class RealtimeActivityService {
                 .collect(Collectors.toSet());
 
         if (globalSubscriberUserIds.isEmpty()) {
-            log.debug("📭 No global subscribers found");
+            log.debug("No global subscribers found");
             return;
         }
 
-        // ✅ FIXED: Filter by project access if there's a project
         Set<Long> authorizedUserIds = globalSubscriberUserIds;
         if (broadcast.getProject() != null) {
             Project project = projectRepository.findById(broadcast.getProject().getId()).orElse(null);
@@ -93,102 +86,91 @@ public class RealtimeActivityService {
             }
         }
 
-        log.debug("📤 Broadcasting to {} authorized global subscribers", authorizedUserIds.size());
+        log.debug("Broadcasting to {} authorized global subscribers", authorizedUserIds.size());
 
-        // ✅ CRITICAL FIX: Use correct STOMP destination format
         authorizedUserIds.forEach(userId -> {
             try {
-                // Get the username for this userId
                 Optional<User> userOpt = userRepository.findById(userId);
                 if (userOpt.isPresent()) {
                     String username = userOpt.get().getUsername();
 
-                    // ✅ FIXED: Use correct STOMP destination format
-                    // Don't include username in destination path - STOMP adds it automatically
                     messagingTemplate.convertAndSendToUser(
-                            username,  // Username parameter
-                            "/queue/activities/global",  // Destination (no /user/username prefix!)
+                            username,
+                            "/queue/activities/global",
                             broadcast
                     );
 
-                    log.debug("📨 Sent activity to user {} (username: {}) at destination: /user/{}/queue/activities/global",
+                    log.debug("Sent activity to user {} (username: {}) at destination: /user/{}/queue/activities/global",
                             userId, username, username);
                 } else {
-                    log.warn("⚠️ User {} not found when broadcasting activity", userId);
+                    log.warn("User {} not found when broadcasting activity", userId);
                 }
             } catch (Exception e) {
-                log.error("❌ Failed to send activity to user {}: {}", userId, e.getMessage());
+                log.error("Failed to send activity to user {}: {}", userId, e.getMessage());
             }
         });
     }
 
-    // ✅ FIXED: Project subscribers broadcasting with correct STOMP destination
     private void broadcastToProjectSubscribers(Long projectId, ActivityBroadcast broadcast) {
         Set<String> subscriptions = projectSubscriptions.get(projectId);
         if (subscriptions != null && !subscriptions.isEmpty()) {
-            log.debug("📡 Broadcasting to {} project {} subscribers", subscriptions.size(), projectId);
+            log.debug("Broadcasting to {} project {} subscribers", subscriptions.size(), projectId);
 
             subscriptions.forEach(subId -> {
                 ActivitySubscription sub = activeSubscriptions.get(subId);
                 if (sub != null) {
                     try {
-                        // Get username for this user
                         Optional<User> userOpt = userRepository.findById(sub.getUserId());
                         if (userOpt.isPresent()) {
                             String username = userOpt.get().getUsername();
 
-                            // ✅ FIXED: Correct destination format
                             messagingTemplate.convertAndSendToUser(
-                                    username,  // Username parameter
-                                    "/queue/activities/project/" + projectId,  // Destination (no /user/username prefix!)
+                                    username,
+                                    "/queue/activities/project/" + projectId,
                                     broadcast
                             );
-                            log.debug("📨 Sent project activity to user {} (username: {})", sub.getUserId(), username);
+                            log.debug("Sent project activity to user {} (username: {})", sub.getUserId(), username);
                         }
                     } catch (Exception e) {
-                        log.error("❌ Failed to send project activity to user {}: {}", sub.getUserId(), e.getMessage());
+                        log.error("Failed to send project activity to user {}: {}", sub.getUserId(), e.getMessage());
                     }
                 }
             });
         }
     }
 
-    // ✅ FIXED: Task subscribers broadcasting with correct STOMP destination
     private void broadcastToTaskSubscribers(Long taskId, ActivityBroadcast broadcast) {
         Set<String> subscriptions = taskSubscriptions.get(taskId);
         if (subscriptions != null && !subscriptions.isEmpty()) {
-            log.debug("📡 Broadcasting to {} task {} subscribers", subscriptions.size(), taskId);
+            log.debug("Broadcasting to {} task {} subscribers", subscriptions.size(), taskId);
 
             subscriptions.forEach(subId -> {
                 ActivitySubscription sub = activeSubscriptions.get(subId);
                 if (sub != null) {
                     try {
-                        // Get username for this user
                         Optional<User> userOpt = userRepository.findById(sub.getUserId());
                         if (userOpt.isPresent()) {
                             String username = userOpt.get().getUsername();
 
-                            // ✅ FIXED: Correct destination format
                             messagingTemplate.convertAndSendToUser(
-                                    username,  // Username parameter
-                                    "/queue/activities/task/" + taskId,  // Destination (no /user/username prefix!)
+                                    username,
+                                    "/queue/activities/task/" + taskId,
                                     broadcast
                             );
-                            log.debug("📨 Sent task activity to user {} (username: {})", sub.getUserId(), username);
+                            log.debug("Sent task activity to user {} (username: {})", sub.getUserId(), username);
                         }
                     } catch (Exception e) {
-                        log.error("❌ Failed to send task activity to user {}: {}", sub.getUserId(), e.getMessage());
+                        log.error("Failed to send task activity to user {}: {}", sub.getUserId(), e.getMessage());
                     }
                 }
             });
         }
     }
 
-    // ✅ ENHANCED: Subscribe to global activities
     public SubscriptionResponse subscribeToGlobalActivities(User user, String sessionId) {
         String subscriptionId = generateSubscriptionId("global", null, user.getId());
 
-        log.info("📝 User {} subscribing to global activities (session: {})", user.getUsername(), sessionId);
+        log.info("User {} subscribing to global activities (session: {})", user.getUsername(), sessionId);
 
         ActivitySubscription subscription = ActivitySubscription.builder()
                 .subscriptionId(subscriptionId)
@@ -204,7 +186,7 @@ public class RealtimeActivityService {
 
         ActivitySummary summary = getGlobalActivitySummary(user);
 
-        log.info("✅ User {} successfully subscribed to global activities", user.getUsername());
+        log.info("User {} successfully subscribed to global activities", user.getUsername());
 
         return SubscriptionResponse.builder()
                 .status("success")
@@ -214,10 +196,9 @@ public class RealtimeActivityService {
                 .build();
     }
 
-    // ✅ ENHANCED: Subscribe to project activities
     public SubscriptionResponse subscribeToProjectActivities(User user, Long projectId, String sessionId) {
         if (!projectRepository.hasUserAccessToProject(user, projectId)) {
-            log.warn("🚫 User {} denied access to project {}", user.getUsername(), projectId);
+            log.warn("User {} denied access to project {}", user.getUsername(), projectId);
             return SubscriptionResponse.builder()
                     .status("error")
                     .message("Access denied to project")
@@ -226,7 +207,7 @@ public class RealtimeActivityService {
 
         String subscriptionId = generateSubscriptionId("project", projectId, user.getId());
 
-        log.info("📝 User {} subscribing to project {} activities", user.getUsername(), projectId);
+        log.info("User {} subscribing to project {} activities", user.getUsername(), projectId);
 
         ActivitySubscription subscription = ActivitySubscription.builder()
                 .subscriptionId(subscriptionId)
@@ -243,7 +224,7 @@ public class RealtimeActivityService {
 
         ActivitySummary summary = getProjectActivitySummary(user, projectId);
 
-        log.info("✅ User {} successfully subscribed to project {} activities", user.getUsername(), projectId);
+        log.info("User {} successfully subscribed to project {} activities", user.getUsername(), projectId);
 
         return SubscriptionResponse.builder()
                 .status("success")
@@ -253,14 +234,12 @@ public class RealtimeActivityService {
                 .build();
     }
 
-    // ✅ ENHANCED: Unsubscribe method
     public void unsubscribe(String subscriptionId) {
         ActivitySubscription subscription = activeSubscriptions.remove(subscriptionId);
 
         if (subscription != null) {
-            log.info("🗑️ Unsubscribing: {}", subscriptionId);
+            log.info("Unsubscribing: {}", subscriptionId);
 
-            // Remove from user subscriptions
             Set<String> userSubs = userSubscriptions.get(subscription.getUserId());
             if (userSubs != null) {
                 userSubs.remove(subscriptionId);
@@ -269,7 +248,6 @@ public class RealtimeActivityService {
                 }
             }
 
-            // Remove from project/task subscriptions
             if ("project".equals(subscription.getScope()) && subscription.getEntityId() != null) {
                 Set<String> projectSubs = projectSubscriptions.get(subscription.getEntityId());
                 if (projectSubs != null) {
@@ -288,15 +266,14 @@ public class RealtimeActivityService {
                 }
             }
 
-            log.info("✅ Successfully unsubscribed: {}", subscriptionId);
+            log.info("Successfully unsubscribed: {}", subscriptionId);
         } else {
-            log.warn("⚠️ Subscription not found: {}", subscriptionId);
+            log.warn("Subscription not found: {}", subscriptionId);
         }
     }
 
-    // ✅ ENHANCED: Cleanup user session
     public void cleanupUserSession(Long userId, String sessionId) {
-        log.info("🧹 Cleaning up session for user {} (session: {})", userId, sessionId);
+        log.info("Cleaning up session for user {} (session: {})", userId, sessionId);
 
         Set<String> userSubs = userSubscriptions.get(userId);
         if (userSubs != null) {
@@ -309,11 +286,10 @@ public class RealtimeActivityService {
 
             toRemove.forEach(this::unsubscribe);
 
-            log.info("✅ Cleaned up {} subscriptions for user {} session {}", toRemove.size(), userId, sessionId);
+            log.info("Cleaned up {} subscriptions for user {} session {}", toRemove.size(), userId, sessionId);
         }
     }
 
-    // ✅ GET RECENT ACTIVITIES: For WebSocket controller
     public List<ActivityBroadcast> getRecentActivities(User user, String scope, Long entityId, LocalDateTime since) {
         try {
             List<Activity> activities;
@@ -323,23 +299,21 @@ public class RealtimeActivityService {
             } else if ("project".equals(scope) && entityId != null) {
                 activities = getProjectActivities(user, entityId, since);
             } else {
-                log.warn("❌ Invalid scope or entityId for recent activities: scope={}, entityId={}", scope, entityId);
+                log.warn("Invalid scope or entityId for recent activities: scope={}, entityId={}", scope, entityId);
                 return new ArrayList<>();
             }
 
-            // Convert activities to ActivityBroadcast DTOs
             return activities.stream()
                     .map(this::createActivityBroadcast)
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            log.error("❌ Failed to get recent activities for user {} (scope: {}, entityId: {}): {}",
+            log.error("Failed to get recent activities for user {} (scope: {}, entityId: {}): {}",
                     user.getUsername(), scope, entityId, e.getMessage(), e);
             return new ArrayList<>();
         }
     }
 
-    // ✅ HELPER METHODS
     private Set<Long> getProjectAuthorizedUsers(Project project) {
         Set<Long> userIds = new HashSet<>();
         userIds.add(project.getOwner().getId());
@@ -358,7 +332,6 @@ public class RealtimeActivityService {
                 System.currentTimeMillis());
     }
 
-    // ✅ CREATE ACTIVITY BROADCAST DTO
     private ActivityBroadcast createActivityBroadcast(Activity activity) {
         String eventId = generateEventId(activity);
 
@@ -387,7 +360,6 @@ public class RealtimeActivityService {
                 java.time.ZoneOffset.UTC));
     }
 
-    // ✅ DTO MAPPING METHODS
     private UserInfo mapToUserInfo(User user) {
         return UserInfo.builder()
                 .id(user.getId())
@@ -423,14 +395,12 @@ public class RealtimeActivityService {
                 .build();
     }
 
-    // ✅ ACTIVITY SUMMARY METHODS
     private ActivitySummary getGlobalActivitySummary(User user) {
         LocalDateTime since = LocalDateTime.now().minusDays(7);
         List<Activity> activities = getGlobalActivities(user, since);
 
         return ActivitySummary.builder()
                 .totalActivities((long) activities.size())
-                .unreadActivities((long) activities.size())
                 .lastActivityTime(activities.isEmpty() ? null : activities.get(0).getCreatedAt())
                 .scope("global")
                 .entityId(null)
@@ -443,7 +413,6 @@ public class RealtimeActivityService {
 
         return ActivitySummary.builder()
                 .totalActivities((long) activities.size())
-                .unreadActivities((long) activities.size())
                 .lastActivityTime(activities.isEmpty() ? null : activities.get(0).getCreatedAt())
                 .scope("project")
                 .entityId(projectId)
@@ -466,7 +435,6 @@ public class RealtimeActivityService {
         return activityRepository.findActivitiesByProjectAndDateRange(project, cutoff, LocalDateTime.now());
     }
 
-    // ✅ ACTIVITY METADATA METHODS
     private String determineTargetEntity(Activity activity) {
         if (activity.getTask() != null) return "task";
         if (activity.getProject() != null) return "project";
@@ -594,10 +562,9 @@ public class RealtimeActivityService {
         }
     }
 
-    // ✅ CLEANUP AND MAINTENANCE METHODS
     public void cleanupStaleSubscriptions() {
         try {
-            log.debug("🧹 Cleaning up stale subscriptions...");
+            log.debug("Cleaning up stale subscriptions...");
 
             LocalDateTime cutoff = LocalDateTime.now().minusMinutes(30);
             List<String> staleSubscriptions = activeSubscriptions.entrySet().stream()
@@ -606,26 +573,25 @@ public class RealtimeActivityService {
                     .collect(Collectors.toList());
 
             if (!staleSubscriptions.isEmpty()) {
-                log.info("🗑️ Removing {} stale subscriptions", staleSubscriptions.size());
+                log.info("Removing {} stale subscriptions", staleSubscriptions.size());
                 staleSubscriptions.forEach(this::unsubscribe);
             }
 
-            log.debug("✅ Stale subscription cleanup completed");
+            log.debug("Stale subscription cleanup completed");
         } catch (Exception e) {
-            log.error("❌ Failed to cleanup stale subscriptions: {}", e.getMessage(), e);
+            log.error("Failed to cleanup stale subscriptions: {}", e.getMessage(), e);
         }
     }
 
     public void sendHeartbeatToActiveConnections() {
         try {
-            log.debug("💓 Sending heartbeat to active connections...");
+            log.debug("Sending heartbeat to active connections...");
 
             HeartbeatMessage heartbeat = HeartbeatMessage.builder()
                     .type("heartbeat")
                     .timestamp(LocalDateTime.now())
                     .build();
 
-            // Send heartbeat to all active subscribers
             activeSubscriptions.values().stream()
                     .map(ActivitySubscription::getUserId)
                     .distinct()
@@ -634,7 +600,6 @@ public class RealtimeActivityService {
                             Optional<User> userOpt = userRepository.findById(userId);
                             if (userOpt.isPresent()) {
                                 String username = userOpt.get().getUsername();
-                                // ✅ FIXED: Use correct destination format for heartbeat too
                                 messagingTemplate.convertAndSendToUser(
                                         username,
                                         "/queue/activities/heartbeat",
@@ -642,20 +607,20 @@ public class RealtimeActivityService {
                                 );
                             }
                         } catch (Exception e) {
-                            log.warn("⚠️ Failed to send heartbeat to user {}: {}", userId, e.getMessage());
+                            log.warn("Failed to send heartbeat to user {}: {}", userId, e.getMessage());
                         }
                     });
 
-            log.debug("✅ Heartbeat sent to {} active users",
+            log.debug("Heartbeat sent to {} active users",
                     activeSubscriptions.values().stream().map(ActivitySubscription::getUserId).distinct().count());
         } catch (Exception e) {
-            log.error("❌ Failed to send heartbeat: {}", e.getMessage(), e);
+            log.error("Failed to send heartbeat: {}", e.getMessage(), e);
         }
     }
 
     public void cleanupInactiveSessions() {
         try {
-            log.debug("🧹 Cleaning up inactive sessions...");
+            log.debug("Cleaning up inactive sessions...");
 
             LocalDateTime cutoff = LocalDateTime.now().minusHours(2);
             List<String> inactiveSessions = activeSubscriptions.entrySet().stream()
@@ -665,7 +630,7 @@ public class RealtimeActivityService {
                     .collect(Collectors.toList());
 
             if (!inactiveSessions.isEmpty()) {
-                log.info("🗑️ Cleaning up {} inactive sessions", inactiveSessions.size());
+                log.info("Cleaning up {} inactive sessions", inactiveSessions.size());
                 inactiveSessions.forEach(sessionId -> {
                     try {
                         List<String> sessionSubscriptions = activeSubscriptions.entrySet().stream()
@@ -675,18 +640,17 @@ public class RealtimeActivityService {
 
                         sessionSubscriptions.forEach(this::unsubscribe);
                     } catch (Exception e) {
-                        log.warn("⚠️ Failed to cleanup session {}: {}", sessionId, e.getMessage());
+                        log.warn("Failed to cleanup session {}: {}", sessionId, e.getMessage());
                     }
                 });
             }
 
-            log.debug("✅ Inactive session cleanup completed");
+            log.debug("Inactive session cleanup completed");
         } catch (Exception e) {
-            log.error("❌ Failed to cleanup inactive sessions: {}", e.getMessage(), e);
+            log.error("Failed to cleanup inactive sessions: {}", e.getMessage(), e);
         }
     }
 
-    // ✅ DEBUG AND MONITORING METHODS
     public Map<String, Object> getSubscriptionStats() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalActiveSubscriptions", activeSubscriptions.size());

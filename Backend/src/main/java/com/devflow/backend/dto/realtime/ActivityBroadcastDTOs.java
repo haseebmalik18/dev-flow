@@ -22,19 +22,16 @@ public class ActivityBroadcastDTOs {
         private LocalDateTime timestamp;
         private String eventId;
 
-
         private UserInfo user;
         private ProjectInfo project;
         private TaskInfo task;
         private String targetEntity;
         private Long targetEntityId;
 
-
         private Map<String, Object> metadata;
         private String changeType;
         private Map<String, Object> oldValues;
         private Map<String, Object> newValues;
-
 
         private String displayMessage;
         private String iconType;
@@ -123,7 +120,6 @@ public class ActivityBroadcastDTOs {
     @AllArgsConstructor
     public static class ActivitySummary {
         private Long totalActivities;
-        private Long unreadActivities;
         private LocalDateTime lastActivityTime;
         private String scope;
         private Long entityId;

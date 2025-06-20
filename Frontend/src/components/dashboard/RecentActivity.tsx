@@ -67,8 +67,7 @@ const getActivityColor = (type: string) => {
 
 const ActivityItemComponent: React.FC<{
   activity: ActivityItem;
-  isNew?: boolean;
-}> = ({ activity, isNew = false }) => {
+}> = ({ activity }) => {
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -89,11 +88,7 @@ const ActivityItemComponent: React.FC<{
   };
 
   return (
-    <div
-      className={`flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors ${
-        isNew ? "bg-blue-50 border-l-4 border-blue-400" : ""
-      }`}
-    >
+    <div className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
       <div className="flex-shrink-0">
         <div className="relative">
           {activity.user.avatar ? (
@@ -114,9 +109,6 @@ const ActivityItemComponent: React.FC<{
           >
             <ActivityIcon type={activity.type} />
           </div>
-          {isNew && (
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-          )}
         </div>
       </div>
 
@@ -137,11 +129,6 @@ const ActivityItemComponent: React.FC<{
           <span className="text-xs text-gray-500">
             {formatTime(activity.createdAt)}
           </span>
-          {isNew && (
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-              New
-            </span>
-          )}
         </div>
       </div>
     </div>
@@ -165,34 +152,25 @@ export const RecentActivity: React.FC = () => {
   const { data: activities, isLoading, error } = useRecentActivity();
   const {
     realtimeActivities,
-    hasNewActivity,
-    markAsRead,
     isConnected: realtimeConnected,
     clearActivities,
   } = useRealtimeActivity();
   const { connectionState, forceReconnect } = useWebSocket();
 
-  // Merge server activities with real-time activities
   const allActivities = React.useMemo(() => {
     if (!activities) return realtimeActivities;
 
-    // Create a Map to track seen activity IDs to prevent duplicates
     const activityIds = new Set(activities.map((a) => a.id));
     const newRealtimeActivities = realtimeActivities.filter(
       (ra) => !activityIds.has(ra.id)
     );
 
-    // Merge and sort by creation time
     const merged = [...newRealtimeActivities, ...activities];
     return merged.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [activities, realtimeActivities]);
-
-  const handleMarkAsRead = () => {
-    markAsRead();
-  };
 
   const handleClearActivities = () => {
     clearActivities();
@@ -234,7 +212,6 @@ export const RecentActivity: React.FC = () => {
             Recent Activity
           </h2>
 
-          {/* Connection Status Indicator */}
           <div className="flex items-center space-x-1">
             {connectionState === "connected" ? (
               <div
@@ -261,18 +238,6 @@ export const RecentActivity: React.FC = () => {
               </button>
             )}
           </div>
-
-          {/* New Activity Indicator */}
-          {hasNewActivity && (
-            <button
-              onClick={handleMarkAsRead}
-              className="flex items-center space-x-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium hover:bg-blue-200 transition-colors"
-              title="New activity available"
-            >
-              <Circle className="w-2 h-2 fill-current animate-pulse" />
-              <span>{realtimeActivities.length} new</span>
-            </button>
-          )}
         </div>
 
         <div className="flex items-center space-x-2">
@@ -301,7 +266,6 @@ export const RecentActivity: React.FC = () => {
             <ActivityItemComponent
               key={`${activity.id}-${index}`}
               activity={activity}
-              isNew={index < realtimeActivities.length}
             />
           ))
         ) : (
@@ -335,7 +299,6 @@ export const RecentActivity: React.FC = () => {
         </div>
       )}
 
-      {/* Connection status footer for debugging */}
       {process.env.NODE_ENV === "development" && (
         <div className="mt-4 pt-4 border-t border-gray-100">
           <div className="text-xs text-gray-500 space-y-1">

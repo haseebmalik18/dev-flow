@@ -18,75 +18,50 @@ export const useWebSocket = (): UseWebSocketReturn => {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("disconnected");
   const { isAuthenticated } = useAuthStore();
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const tabIdRef = useRef<string | undefined>(undefined);
+  const unregisterTabRef = useRef<(() => void) | null>(null);
 
-  // Clear reconnect timeout on unmount
   useEffect(() => {
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
+    if (!tabIdRef.current) {
+      tabIdRef.current = Math.random().toString(36).substring(2);
+    }
   }, []);
 
-  // Listen to connection state changes
   useEffect(() => {
     const unsubscribe = websocketService.onConnectionStatusChange((state) => {
-      console.log("🔗 WebSocket hook received state change:", state);
       setConnectionState(state);
     });
 
     return unsubscribe;
   }, []);
 
-  // Auto-connect when authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      console.log("🔄 User authenticated - auto-connecting WebSocket");
+    if (isAuthenticated && tabIdRef.current) {
+      unregisterTabRef.current = websocketService.registerTab(tabIdRef.current);
 
-      // Small delay to ensure auth is fully set up
-      const timeoutId = setTimeout(() => {
+      setTimeout(() => {
         websocketService.connect();
       }, 100);
 
       return () => {
-        clearTimeout(timeoutId);
+        if (unregisterTabRef.current) {
+          unregisterTabRef.current();
+          unregisterTabRef.current = null;
+        }
       };
     } else {
-      console.log("🔄 User not authenticated - disconnecting WebSocket");
-      websocketService.disconnect();
+      if (unregisterTabRef.current) {
+        unregisterTabRef.current();
+        unregisterTabRef.current = null;
+      }
     }
   }, [isAuthenticated]);
 
-  // Connection recovery logic
-  useEffect(() => {
-    if (connectionState === "error" && isAuthenticated) {
-      // Clear any existing timeout
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-
-      // Schedule reconnection attempt
-      reconnectTimeoutRef.current = setTimeout(() => {
-        console.log("🔄 Attempting connection recovery...");
-        websocketService.forceReconnect();
-      }, 3000);
-    }
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-    };
-  }, [connectionState, isAuthenticated]);
-
-  // Heartbeat to keep connection alive
   useEffect(() => {
     if (connectionState === "connected") {
       const heartbeatInterval = setInterval(() => {
         websocketService.sendHeartbeat();
-      }, 30000); // Send heartbeat every 30 seconds
+      }, 30000);
 
       return () => {
         clearInterval(heartbeatInterval);
@@ -94,19 +69,15 @@ export const useWebSocket = (): UseWebSocketReturn => {
     }
   }, [connectionState]);
 
-  // Manual control functions
   const connect = useCallback(() => {
-    console.log("🔄 Manual connect requested");
     websocketService.connect();
   }, []);
 
   const disconnect = useCallback(() => {
-    console.log("🔄 Manual disconnect requested");
     websocketService.disconnect();
   }, []);
 
   const forceReconnect = useCallback(() => {
-    console.log("🔄 Force reconnect requested");
     websocketService.forceReconnect();
   }, []);
 

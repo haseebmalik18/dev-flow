@@ -34,10 +34,8 @@ public class WebSocketActivityController {
     private final RealtimeActivityService realtimeActivityService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    // Track active sessions
     private final Map<String, SessionInfo> activeSessions = new ConcurrentHashMap<>();
 
-    // ✅ FIXED: Global activities subscription
     @MessageMapping("/subscribe/global")
     @SendToUser("/queue/activities/response")
     public SubscriptionResponse subscribeToGlobalActivities(
@@ -48,38 +46,33 @@ public class WebSocketActivityController {
         String sessionId = headerAccessor.getSessionId();
 
         try {
-            // ✅ IMPROVED: Better authentication check
             User user = extractUserFromPrincipal(principal);
             if (user == null) {
-                log.warn("❌ No authenticated user found for global subscription (session: {})", sessionId);
+                log.warn("No authenticated user found for global subscription (session: {})", sessionId);
                 return createErrorResponse("Authentication required", null);
             }
 
-            log.info("📝 User {} subscribing to global activities (session: {})",
+            log.info("User {} subscribing to global activities (session: {})",
                     user.getUsername(), sessionId);
 
-            // ✅ ENHANCED: Track session
             activeSessions.put(sessionId, new SessionInfo(user.getId(), sessionId, LocalDateTime.now()));
 
-            // ✅ FIXED: Call service to handle subscription
             SubscriptionResponse response = realtimeActivityService.subscribeToGlobalActivities(user, sessionId);
 
-            // ✅ IMPROVED: Send recent activities if requested
             if (request != null && request.getLastSeen() != null) {
                 sendRecentActivitiesAsync(user, "global", null, request.getLastSeen(), sessionId);
             }
 
-            log.info("✅ User {} successfully subscribed to global activities", user.getUsername());
+            log.info("User {} successfully subscribed to global activities", user.getUsername());
             return response;
 
         } catch (Exception e) {
-            log.error("❌ Failed to subscribe to global activities (session: {}): {}",
+            log.error("Failed to subscribe to global activities (session: {}): {}",
                     sessionId, e.getMessage(), e);
             return createErrorResponse("Failed to subscribe: " + e.getMessage(), null);
         }
     }
 
-    // ✅ FIXED: Project activities subscription
     @MessageMapping("/subscribe/project/{projectId}")
     @SendToUser("/queue/activities/response")
     public SubscriptionResponse subscribeToProjectActivities(
@@ -93,35 +86,31 @@ public class WebSocketActivityController {
         try {
             User user = extractUserFromPrincipal(principal);
             if (user == null) {
-                log.warn("❌ No authenticated user found for project subscription (session: {})", sessionId);
+                log.warn("No authenticated user found for project subscription (session: {})", sessionId);
                 return createErrorResponse("Authentication required", null);
             }
 
-            log.info("📝 User {} subscribing to project {} activities (session: {})",
+            log.info("User {} subscribing to project {} activities (session: {})",
                     user.getUsername(), projectId, sessionId);
 
-            // Track session
             activeSessions.put(sessionId, new SessionInfo(user.getId(), sessionId, LocalDateTime.now()));
 
-            // Call service
             SubscriptionResponse response = realtimeActivityService.subscribeToProjectActivities(user, projectId, sessionId);
 
-            // Send recent activities if requested
             if (request != null && request.getLastSeen() != null) {
                 sendRecentActivitiesAsync(user, "project", projectId, request.getLastSeen(), sessionId);
             }
 
-            log.info("✅ User {} successfully subscribed to project {} activities", user.getUsername(), projectId);
+            log.info("User {} successfully subscribed to project {} activities", user.getUsername(), projectId);
             return response;
 
         } catch (Exception e) {
-            log.error("❌ Failed to subscribe to project {} activities (session: {}): {}",
+            log.error("Failed to subscribe to project {} activities (session: {}): {}",
                     projectId, sessionId, e.getMessage(), e);
             return createErrorResponse("Failed to subscribe: " + e.getMessage(), null);
         }
     }
 
-    // ✅ ENHANCED: Heartbeat handling
     @MessageMapping("/heartbeat")
     @SendToUser("/queue/activities/heartbeat")
     public HeartbeatMessage heartbeat(
@@ -139,13 +128,12 @@ public class WebSocketActivityController {
                         .build();
             }
 
-            // Update session activity
             SessionInfo sessionInfo = activeSessions.get(sessionId);
             if (sessionInfo != null) {
                 sessionInfo.lastActivity = LocalDateTime.now();
             }
 
-            log.debug("💓 Heartbeat from user {} (session: {})", user.getUsername(), sessionId);
+            log.debug("Heartbeat from user {} (session: {})", user.getUsername(), sessionId);
 
             return HeartbeatMessage.builder()
                     .timestamp(LocalDateTime.now())
@@ -154,14 +142,13 @@ public class WebSocketActivityController {
                     .build();
 
         } catch (Exception e) {
-            log.error("❌ Heartbeat error (session: {}): {}", sessionId, e.getMessage());
+            log.error("Heartbeat error (session: {}): {}", sessionId, e.getMessage());
             return HeartbeatMessage.builder()
                     .timestamp(LocalDateTime.now())
                     .build();
         }
     }
 
-    // ✅ ENHANCED: Unsubscribe handling
     @MessageMapping("/unsubscribe/{subscriptionId}")
     @SendToUser("/queue/activities/response")
     public SubscriptionResponse unsubscribeFromActivities(
@@ -174,7 +161,7 @@ public class WebSocketActivityController {
                 return createErrorResponse("Authentication required", subscriptionId);
             }
 
-            log.info("🗑️ User {} unsubscribing from {}", user.getUsername(), subscriptionId);
+            log.info("User {} unsubscribing from {}", user.getUsername(), subscriptionId);
 
             realtimeActivityService.unsubscribe(subscriptionId);
 
@@ -185,12 +172,11 @@ public class WebSocketActivityController {
                     .build();
 
         } catch (Exception e) {
-            log.error("❌ Failed to unsubscribe from {}: {}", subscriptionId, e.getMessage());
+            log.error("Failed to unsubscribe from {}: {}", subscriptionId, e.getMessage());
             return createErrorResponse("Failed to unsubscribe: " + e.getMessage(), subscriptionId);
         }
     }
 
-    // ✅ NEW: Get subscription status
     @MessageMapping("/status")
     @SendToUser("/queue/activities/status")
     public Map<String, Object> getSubscriptionStatus(Principal principal) {
@@ -212,13 +198,11 @@ public class WebSocketActivityController {
         }
     }
 
-    // ✅ ENHANCED: Connection event handling
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectEvent event) {
         String sessionId = event.getMessage().getHeaders().get("simpSessionId").toString();
-        log.info("🔗 WebSocket connection established: {}", sessionId);
+        log.info("WebSocket connection established: {}", sessionId);
 
-        // Send connection status
         ConnectionStatus status = ConnectionStatus.builder()
                 .status("connected")
                 .sessionId(sessionId)
@@ -226,25 +210,20 @@ public class WebSocketActivityController {
                 .activeSubscriptions(0)
                 .message("WebSocket connection established")
                 .build();
-
-        // Note: We can't send user-specific messages here because authentication might not be complete yet
     }
 
-    // ✅ ENHANCED: Disconnect event handling
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         String sessionId = event.getSessionId();
-        log.info("🔌 WebSocket connection closed: {}", sessionId);
+        log.info("WebSocket connection closed: {}", sessionId);
 
-        // Clean up session
         SessionInfo sessionInfo = activeSessions.remove(sessionId);
         if (sessionInfo != null) {
             realtimeActivityService.cleanupUserSession(sessionInfo.userId, sessionId);
-            log.info("🧹 Cleaned up session for user {}: {}", sessionInfo.userId, sessionId);
+            log.info("Cleaned up session for user {}: {}", sessionInfo.userId, sessionId);
         }
     }
 
-    // ✅ HELPER: Extract user from principal
     private User extractUserFromPrincipal(Principal principal) {
         if (principal == null) {
             return null;
@@ -261,12 +240,11 @@ public class WebSocketActivityController {
             }
             return null;
         } catch (Exception e) {
-            log.error("❌ Failed to extract user from principal: {}", e.getMessage());
+            log.error("Failed to extract user from principal: {}", e.getMessage());
             return null;
         }
     }
 
-    // ✅ HELPER: Create error response
     private SubscriptionResponse createErrorResponse(String message, String subscriptionId) {
         return SubscriptionResponse.builder()
                 .status("error")
@@ -275,10 +253,8 @@ public class WebSocketActivityController {
                 .build();
     }
 
-    // ✅ IMPROVED: Send recent activities asynchronously
     private void sendRecentActivitiesAsync(User user, String scope, Long entityId,
                                            LocalDateTime since, String sessionId) {
-        // Use @Async or CompletableFuture to avoid blocking the subscription response
         CompletableFuture.runAsync(() -> {
             try {
                 List<ActivityBroadcast> activities = realtimeActivityService.getRecentActivities(
@@ -290,17 +266,16 @@ public class WebSocketActivityController {
                             "/queue/activities/recent",
                             activities
                     );
-                    log.debug("📨 Sent {} recent activities to user {} (session: {})",
+                    log.debug("Sent {} recent activities to user {} (session: {})",
                             activities.size(), user.getUsername(), sessionId);
                 }
             } catch (Exception e) {
-                log.error("❌ Failed to send recent activities to user {} (session: {}): {}",
+                log.error("Failed to send recent activities to user {} (session: {}): {}",
                         user.getUsername(), sessionId, e.getMessage());
             }
         });
     }
 
-    // ✅ SESSION INFO: Track session information
     private static class SessionInfo {
         Long userId;
         String sessionId;
@@ -315,7 +290,6 @@ public class WebSocketActivityController {
         }
     }
 
-    // ✅ DEVELOPMENT: Debug endpoints (only for development)
     @MessageMapping("/debug/info")
     @SendToUser("/queue/activities/debug")
     public Map<String, Object> getDebugInfo(Principal principal) {
@@ -361,7 +335,6 @@ public class WebSocketActivityController {
                 return createErrorResponse("Authentication required", null);
             }
 
-            // Create a test activity broadcast
             ActivityBroadcast testActivity = ActivityBroadcast.builder()
                     .activityId(-1L)
                     .type(ActivityType.TASK_CREATED)
@@ -380,14 +353,13 @@ public class WebSocketActivityController {
                     .color("blue")
                     .build();
 
-            // Send test activity
             messagingTemplate.convertAndSendToUser(
                     user.getUsername(),
                     "/queue/activities/global",
                     testActivity
             );
 
-            log.info("🧪 Sent test activity to user {}", user.getUsername());
+            log.info("Sent test activity to user {}", user.getUsername());
 
             return SubscriptionResponse.builder()
                     .status("success")
@@ -395,7 +367,7 @@ public class WebSocketActivityController {
                     .build();
 
         } catch (Exception e) {
-            log.error("❌ Failed to send test activity: {}", e.getMessage());
+            log.error("Failed to send test activity: {}", e.getMessage());
             return createErrorResponse("Test failed: " + e.getMessage(), null);
         }
     }

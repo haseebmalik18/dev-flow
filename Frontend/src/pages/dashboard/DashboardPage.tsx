@@ -66,7 +66,6 @@ export const DashboardPage: React.FC = () => {
 
     const config = getStatusConfig();
 
-    // Only show status bar if there's an issue or if we have new activity
     if (connectionState === "connected" && !hasNewActivity) {
       return null;
     }
@@ -111,56 +110,12 @@ export const DashboardPage: React.FC = () => {
     );
   };
 
-  // Development helper component
-  const DevelopmentHelper = () => {
-    if (process.env.NODE_ENV !== "development") {
-      return null;
-    }
-
-    return (
-      <div className="mb-4 bg-purple-50 border border-purple-200 rounded-lg p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-purple-800">
-            <div className="w-4 h-4 bg-purple-500 rounded-full"></div>
-            <span className="text-sm font-medium">
-              Development Mode - Real-time Testing
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => (window as any).wsDebug?.triggerRandom()}
-              className="px-3 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-800 rounded-full transition-colors"
-            >
-              Test Activity
-            </button>
-
-            <button
-              onClick={() => (window as any).wsDebug?.debug()}
-              className="px-3 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-800 rounded-full transition-colors"
-            >
-              Debug Info
-            </button>
-
-            <button
-              onClick={() => (window as any).wsDebug?.triggerBurst(3)}
-              className="px-3 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-800 rounded-full transition-colors"
-            >
-              Test Burst
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <DashboardHeader />
 
       <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <ConnectionStatus />
-        <DevelopmentHelper />
 
         <div className="space-y-8">
           <DashboardStats />

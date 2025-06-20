@@ -22,7 +22,6 @@ public class ActivityService {
     private final RealtimeActivityService realtimeActivityService;
     private final ObjectMapper objectMapper;
 
-
     public Activity createProjectCreatedActivity(User user, Project project) {
         String description = String.format("%s created project \"%s\"", user.getFullName(), project.getName());
 
@@ -69,7 +68,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createProjectStatusChangedActivity(User user, Project project, ProjectStatus oldStatus, ProjectStatus newStatus) {
         String description = String.format("%s changed project \"%s\" status from %s to %s",
                 user.getFullName(), project.getName(), oldStatus.name(), newStatus.name());
@@ -93,7 +91,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createProjectArchivedActivity(User user, Project project) {
         String description = String.format("%s archived project \"%s\"", user.getFullName(), project.getName());
 
@@ -113,7 +110,6 @@ public class ActivityService {
         log.debug("Project archived activity broadcasted: {}", activity.getId());
         return activity;
     }
-
 
     public Activity createMemberAddedActivity(User inviter, User newMember, Project project, ProjectRole role) {
         String description = String.format("%s added %s to project \"%s\" as %s",
@@ -140,7 +136,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createMemberRemovedActivity(User remover, User removedMember, Project project) {
         String description = String.format("%s removed %s from project \"%s\"",
                 remover.getFullName(), removedMember.getFullName(), project.getName());
@@ -164,7 +159,6 @@ public class ActivityService {
         log.debug("Member removed activity broadcasted: {}", activity.getId());
         return activity;
     }
-
 
     public Activity createTaskCreatedActivity(User user, Task task) {
         String description = String.format("%s created task \"%s\"", user.getFullName(), task.getTitle());
@@ -214,7 +208,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createTaskStatusChangedActivity(User user, Task task, TaskStatus oldStatus, TaskStatus newStatus) {
         String description = String.format("%s changed task \"%s\" status from %s to %s",
                 user.getFullName(), task.getTitle(), oldStatus.name(), newStatus.name());
@@ -239,7 +232,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createTaskCompletedActivity(User user, Task task) {
         String description = String.format("%s completed task \"%s\"", user.getFullName(), task.getTitle());
 
@@ -260,7 +252,6 @@ public class ActivityService {
         log.debug("Task completed activity broadcasted: {}", activity.getId());
         return activity;
     }
-
 
     public Activity createTaskAssignedActivity(User assigner, User assignee, Task task) {
         String description = String.format("%s assigned task \"%s\" to %s",
@@ -287,7 +278,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createTaskPriorityChangedActivity(User user, Task task, Priority oldPriority, Priority newPriority) {
         String description = String.format("%s changed task \"%s\" priority from %s to %s",
                 user.getFullName(), task.getTitle(), oldPriority.name(), newPriority.name());
@@ -312,7 +302,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createCommentAddedActivity(User user, Comment comment, Task task) {
         String description = String.format("%s added a comment to task \"%s\"",
                 user.getFullName(), task.getTitle());
@@ -336,7 +325,6 @@ public class ActivityService {
         log.debug("Comment added activity broadcasted: {}", activity.getId());
         return activity;
     }
-
 
     public Activity createCommentMentionedActivity(User commenter, User mentionedUser, Comment comment, Task task) {
         String description = String.format("%s mentioned you in a comment on task \"%s\"",
@@ -409,7 +397,6 @@ public class ActivityService {
         return activity;
     }
 
-
     private Map<String, Object> createProjectMetadataMap(Project project) {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("projectId", project.getId());
@@ -428,7 +415,6 @@ public class ActivityService {
 
         return metadata;
     }
-
 
     private Map<String, Object> createTaskMetadataMap(Task task) {
         Map<String, Object> metadata = new HashMap<>();
@@ -456,7 +442,6 @@ public class ActivityService {
         return metadata;
     }
 
-
     private String serializeMetadata(Map<String, Object> metadata) {
         try {
             return objectMapper.writeValueAsString(metadata);
@@ -466,17 +451,12 @@ public class ActivityService {
         }
     }
 
-
-
     private String truncateText(String text, int maxLength) {
         if (text == null || text.length() <= maxLength) {
             return text;
         }
         return text.substring(0, maxLength - 3) + "...";
     }
-
-
-
 
     public Activity createFileDeletedActivity(User user, TaskAttachment attachment) {
         String description = String.format("%s deleted file \"%s\" from task \"%s\"",
@@ -505,7 +485,6 @@ public class ActivityService {
         return activity;
     }
 
-
     public Activity createFileDownloadedActivity(User user, TaskAttachment attachment) {
         String description = String.format("%s downloaded file \"%s\" from task \"%s\"",
                 user.getFullName(), attachment.getOriginalFileName(), attachment.getTask().getTitle());
@@ -532,7 +511,6 @@ public class ActivityService {
         log.debug("File downloaded activity broadcasted: {}", activity.getId());
         return activity;
     }
-
 
     public Activity createBulkFileUploadActivity(User user, Task task, int fileCount, long totalSize) {
         String description = String.format("%s uploaded %d files to task \"%s\" (%s total)",

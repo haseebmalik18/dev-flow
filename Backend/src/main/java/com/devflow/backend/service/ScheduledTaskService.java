@@ -20,7 +20,6 @@ public class ScheduledTaskService {
     private final ActivityRepository activityRepository;
     private final RealtimeActivityService realtimeActivityService;
 
-
     @Scheduled(cron = "0 0 2 * * ?")
     @Transactional
     public void cleanupOldActivities() {
@@ -46,22 +45,17 @@ public class ScheduledTaskService {
         }
     }
 
-
     @Scheduled(fixedRate = 3600000)
     public void cleanupStaleSubscriptions() {
         log.debug("Cleaning up stale WebSocket subscriptions");
 
         try {
-            // This would clean up subscriptions for sessions that are no longer active
-            // Implementation depends on session tracking mechanism
             realtimeActivityService.cleanupStaleSubscriptions();
 
         } catch (Exception e) {
             log.error("Failed to cleanup stale subscriptions: {}", e.getMessage(), e);
         }
     }
-
-
 
     @Scheduled(fixedRate = 30000)
     public void sendHeartbeat() {
@@ -73,8 +67,6 @@ public class ScheduledTaskService {
         }
     }
 
-
-
     @Scheduled(cron = "0 0 6 * * ?")
     @Transactional(readOnly = true)
     public void generateDailyActivitySummary() {
@@ -85,14 +77,12 @@ public class ScheduledTaskService {
             LocalDateTime startOfDay = yesterday.toLocalDate().atStartOfDay();
             LocalDateTime endOfDay = yesterday.toLocalDate().atTime(23, 59, 59);
 
-
             List<Activity> yesterdayActivities = activityRepository.findAll().stream()
                     .filter(activity -> activity.getCreatedAt().isAfter(startOfDay) &&
                             activity.getCreatedAt().isBefore(endOfDay))
                     .toList();
 
             if (!yesterdayActivities.isEmpty()) {
-
                 long totalActivities = yesterdayActivities.size();
                 long uniqueUsers = yesterdayActivities.stream()
                         .map(activity -> activity.getUser().getId())
@@ -124,7 +114,6 @@ public class ScheduledTaskService {
             log.error("Failed to cleanup inactive sessions: {}", e.getMessage(), e);
         }
     }
-
 
     private boolean isImportantActivity(Activity activity) {
         return activity.getType() == ActivityType.PROJECT_CREATED ||
