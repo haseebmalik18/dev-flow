@@ -7,7 +7,7 @@ import { QuickActions } from "../../components/dashboard/QuickActions";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { PendingInvitationsComponent } from "../../components/invitations/PendingInvitationsComponent";
 import { useWebSocket } from "../../hooks/useWebSocket";
-import { useRealtimeActivity } from "../../hooks/useRealtimeActivity";
+import { useRealtimeActivity } from "../../hooks/useRealTimeActivity";
 import {
   Wifi,
   WifiOff,
