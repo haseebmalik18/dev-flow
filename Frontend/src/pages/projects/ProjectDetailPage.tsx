@@ -27,6 +27,7 @@ import { EnhancedTaskManagement } from "../../components/projects/TaskManagement
 import { TaskFormModal } from "../../components/projects/TaskFormModal";
 import { ProjectInvitationsTab } from "../../components/invitations/ProjectInvitationsTab";
 import { InviteMembersModal } from "../../components/invitations/InviteMembersModal";
+import { ProjectActivityFeed } from "../../components/projects/ProjectActivityFeed";
 import {
   useProject,
   useProjectMembers,
@@ -175,9 +176,7 @@ export const ProjectDetailPage: React.FC = () => {
     try {
       await archiveProjectMutation.mutateAsync(project.id);
       navigate("/projects");
-    } catch (error) {
-      // Error is handled by the mutation hook
-    }
+    } catch (error) {}
   };
 
   const getStatusText = (status: string) => {
@@ -657,6 +656,32 @@ export const ProjectDetailPage: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="p-4 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          Recent Activity
+                        </h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setActiveTab("activity")}
+                        >
+                          View All
+                        </Button>
+                      </div>
+                    </div>
+                    <ProjectActivityFeed
+                      projectId={parseInt(id!)}
+                      projectName={project.name}
+                      showHeader={false}
+                      maxHeight="300px"
+                      limit={5}
+                      enableFiltering={false}
+                      showConnectionStatus={false}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -727,19 +752,16 @@ export const ProjectDetailPage: React.FC = () => {
             )}
 
             {activeTab === "activity" && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Recent Activity
-                </h3>
-                <div className="bg-white rounded-xl border border-gray-200 p-6">
-                  <div className="text-center py-8">
-                    <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">
-                      Activity feed will be implemented in the next phase
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <ProjectActivityFeed
+                projectId={parseInt(id!)}
+                projectName={project.name}
+                showHeader={true}
+                maxHeight="800px"
+                limit={100}
+                autoRefresh={true}
+                enableFiltering={true}
+                showConnectionStatus={true}
+              />
             )}
           </div>
         </div>

@@ -12,6 +12,13 @@ export interface UseWebSocketReturn {
   disconnect: () => void;
   forceReconnect: () => void;
   sendHeartbeat: () => void;
+  subscribeToGlobalActivities: (
+    callback: (activity: any) => void
+  ) => () => void;
+  subscribeToProjectActivities: (
+    projectId: number,
+    callback: (activity: any) => void
+  ) => () => void;
 }
 
 export const useWebSocket = (): UseWebSocketReturn => {
@@ -85,6 +92,20 @@ export const useWebSocket = (): UseWebSocketReturn => {
     websocketService.sendHeartbeat();
   }, []);
 
+  const subscribeToGlobalActivities = useCallback(
+    (callback: (activity: any) => void) => {
+      return websocketService.onGlobalActivityUpdate(callback);
+    },
+    []
+  );
+
+  const subscribeToProjectActivities = useCallback(
+    (projectId: number, callback: (activity: any) => void) => {
+      return websocketService.onProjectActivityUpdate(projectId, callback);
+    },
+    []
+  );
+
   return {
     isConnected: connectionState === "connected",
     connectionState,
@@ -92,5 +113,7 @@ export const useWebSocket = (): UseWebSocketReturn => {
     disconnect,
     forceReconnect,
     sendHeartbeat,
+    subscribeToGlobalActivities,
+    subscribeToProjectActivities,
   };
 };

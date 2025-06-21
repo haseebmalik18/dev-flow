@@ -1,35 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   websocketService,
   type ActivityUpdate,
 } from "../services/webSocketService";
 import type { ActivityItem } from "../services/dashboardService";
 
-interface UseRealtimeActivityOptions {
-  projectId?: number | null;
-  enableGlobal?: boolean;
-  enableProject?: boolean;
-  maxActivities?: number;
-  autoConnect?: boolean;
-}
-
-export const useRealtimeActivity = (
-  options: UseRealtimeActivityOptions = {}
-) => {
-  const {
-    projectId = null,
-    enableGlobal = true,
-    enableProject = !!projectId,
-    maxActivities = 50,
-    autoConnect = true,
-  } = options;
-
-  const [globalActivities, setGlobalActivities] = useState<ActivityItem[]>([]);
+export const useProjectRealtimeActivity = (projectId: number | null) => {
   const [projectActivities, setProjectActivities] = useState<ActivityItem[]>(
     []
   );
   const [isConnected, setIsConnected] = useState(false);
-  const [hasNewActivity, setHasNewActivity] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const hasLoadedInitial = useRef(false);
+  const lastProjectId = useRef<number | null>(null);
 
   const convertActivity = useCallback(
     (activity: ActivityUpdate): ActivityItem => {
@@ -88,30 +71,28 @@ export const useRealtimeActivity = (
     []
   );
 
-  const handleNewGlobalActivity = useCallback(
-    (activity: ActivityUpdate) => {
+  const loadStoredActivities = useCallback(
+    (newProjectId: number) => {
       try {
-        const convertedActivity = convertActivity(activity);
+        setIsLoading(true);
+        const storedActivities =
+          websocketService.getProjectActivities(newProjectId);
+        const convertedActivities = storedActivities.map(convertActivity);
 
-        setGlobalActivities((prev) => {
-          const exists = prev.some(
-            (existing) => existing.id === convertedActivity.id
-          );
-          if (exists) {
-            return prev;
-          }
+        const sortedActivities = convertedActivities.sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
 
-          const updated = [convertedActivity, ...prev];
-          const trimmed = updated.slice(0, maxActivities);
-          return trimmed;
-        });
-
-        setHasNewActivity(true);
+        setProjectActivities(sortedActivities);
+        hasLoadedInitial.current = true;
       } catch (error) {
-        // Silent error handling
+        setProjectActivities([]);
+      } finally {
+        setIsLoading(false);
       }
     },
-    [convertActivity, maxActivities]
+    [convertActivity]
   );
 
   const handleNewProjectActivity = useCallback(
@@ -121,79 +102,76 @@ export const useRealtimeActivity = (
 
         setProjectActivities((prev) => {
           const exists = prev.some(
-            (existing) => existing.id === convertedActivity.id
+            (existing) =>
+              existing.id === convertedActivity.id ||
+              (activity.activityId && existing.id === activity.activityId)
           );
+
           if (exists) {
             return prev;
           }
 
           const updated = [convertedActivity, ...prev];
-          const trimmed = updated.slice(0, maxActivities);
-          return trimmed;
-        });
+          const sorted = updated.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
 
-        setHasNewActivity(true);
+          return sorted.slice(0, 100);
+        });
       } catch (error) {
         // Silent error handling
       }
     },
-    [convertActivity, maxActivities]
+    [convertActivity, projectId]
   );
 
-  const handleConnectionStatus = useCallback(
-    (isConnected: boolean) => {
-      setIsConnected(isConnected);
-
-      if (!isConnected) {
-        setTimeout(() => {
-          if (!websocketService.isConnected()) {
-            if (enableGlobal) setGlobalActivities([]);
-            if (enableProject) setProjectActivities([]);
-          }
-        }, 60000);
-      }
-    },
-    [enableGlobal, enableProject]
-  );
-
-  const markAsRead = useCallback(() => {
-    setHasNewActivity(false);
+  const handleConnectionStatus = useCallback((connected: boolean) => {
+    setIsConnected(connected);
   }, []);
 
   const clearActivities = useCallback(() => {
-    if (enableGlobal) setGlobalActivities([]);
-    if (enableProject) setProjectActivities([]);
-    setHasNewActivity(false);
-  }, [enableGlobal, enableProject]);
+    if (projectId) {
+      websocketService.clearProjectActivities(projectId);
+      setProjectActivities([]);
+    }
+  }, [projectId]);
 
   const refreshActivities = useCallback(() => {
-    websocketService.forceReconnect();
-  }, []);
+    if (projectId) {
+      loadStoredActivities(projectId);
+      websocketService.forceReconnect();
+    }
+  }, [projectId, loadStoredActivities]);
 
   useEffect(() => {
-    if (!enableGlobal) return;
+    if (!projectId) {
+      setProjectActivities([]);
+      setIsLoading(false);
+      hasLoadedInitial.current = false;
+      lastProjectId.current = null;
+      return;
+    }
 
-    const unsubscribeActivity = websocketService.onGlobalActivityUpdate(
-      (activity) => {
-        try {
-          handleNewGlobalActivity(activity);
-        } catch (error) {
-          // Silent error handling
-        }
-      }
-    );
-
-    return unsubscribeActivity;
-  }, [enableGlobal, handleNewGlobalActivity]);
+    if (lastProjectId.current !== projectId) {
+      lastProjectId.current = projectId;
+      hasLoadedInitial.current = false;
+      loadStoredActivities(projectId);
+    }
+  }, [projectId, loadStoredActivities]);
 
   useEffect(() => {
-    if (!enableProject || !projectId) return;
+    if (!projectId) {
+      return;
+    }
 
     const unsubscribeActivity = websocketService.onProjectActivityUpdate(
       projectId,
       (activity) => {
         try {
-          handleNewProjectActivity(activity);
+          if (hasLoadedInitial.current) {
+            handleNewProjectActivity(activity);
+          }
         } catch (error) {
           // Silent error handling
         }
@@ -201,7 +179,7 @@ export const useRealtimeActivity = (
     );
 
     return unsubscribeActivity;
-  }, [enableProject, projectId, handleNewProjectActivity]);
+  }, [projectId, handleNewProjectActivity]);
 
   useEffect(() => {
     const unsubscribeConnection = websocketService.onConnectionStatusChange(
@@ -214,7 +192,7 @@ export const useRealtimeActivity = (
   }, [handleConnectionStatus]);
 
   useEffect(() => {
-    if (autoConnect) {
+    if (projectId) {
       const timer = setTimeout(() => {
         if (websocketService.getConnectionState() === "disconnected") {
           websocketService.connect();
@@ -223,42 +201,45 @@ export const useRealtimeActivity = (
 
       return () => clearTimeout(timer);
     }
-  }, [autoConnect]);
+  }, [projectId]);
 
-  const allActivities = useCallback(() => {
-    const combined = [...globalActivities, ...projectActivities];
+  useEffect(() => {
+    if (!projectId) return;
 
-    const uniqueActivities = combined.filter(
-      (activity, index, arr) =>
-        arr.findIndex((a) => a.id === activity.id) === index
-    );
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && hasLoadedInitial.current) {
+        setTimeout(() => {
+          const storedActivities =
+            websocketService.getProjectActivities(projectId);
+          const convertedActivities = storedActivities.map(convertActivity);
+          const sortedActivities = convertedActivities.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
 
-    return uniqueActivities
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      )
-      .slice(0, maxActivities);
-  }, [globalActivities, projectActivities, maxActivities]);
+          setProjectActivities((prev) => {
+            if (sortedActivities.length !== prev.length) {
+              return sortedActivities;
+            }
+            return prev;
+          });
+        }, 100);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [projectId, convertActivity]);
 
   return {
-    globalActivities,
-    realtimeActivities: globalActivities,
     projectActivities,
-    allActivities: allActivities(),
     isConnected,
-    hasNewActivity,
-    markAsRead,
+    isLoading,
     clearActivities,
     refreshActivities,
-    globalActivityCount: globalActivities.length,
-    projectActivityCount: projectActivities.length,
-    totalActivityCount: allActivities().length,
-    lastGlobalActivityTime: globalActivities[0]?.createdAt || null,
-    lastProjectActivityTime: projectActivities[0]?.createdAt || null,
-    lastActivityTime: allActivities()[0]?.createdAt || null,
+    activityCount: projectActivities.length,
+    lastActivityTime: projectActivities[0]?.createdAt || null,
     projectId,
-    enableGlobal,
-    enableProject,
   };
 };

@@ -17,6 +17,11 @@ export interface ActivityUpdate {
   };
   project?: string | { name: string; id: number };
   task?: string | { title: string; id: number };
+  targetEntity?: string;
+  targetEntityId?: number;
+  iconType?: string;
+  priority?: string;
+  color?: string;
 }
 
 export type ConnectionState =
@@ -25,8 +30,24 @@ export type ConnectionState =
   | "connected"
   | "error";
 
-class SingletonWebSocketService {
-  private static instance: SingletonWebSocketService;
+export interface ProjectSubscription {
+  projectId: number;
+  subscriptionId: string;
+  callbacks: Set<(activity: ActivityUpdate) => void>;
+}
+
+const STORAGE_KEY = "devflow_project_activities";
+const STORAGE_EXPIRY = 24 * 60 * 60 * 1000;
+
+interface StoredActivities {
+  [projectId: string]: {
+    activities: ActivityUpdate[];
+    lastUpdated: number;
+  };
+}
+
+class EnhancedWebSocketService {
+  private static instance: EnhancedWebSocketService;
   private client: Client | null = null;
   private connectionState: ConnectionState = "disconnected";
   private reconnectAttempts = 0;
@@ -34,13 +55,18 @@ class SingletonWebSocketService {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
-  private activityCallbacks: Set<(activity: ActivityUpdate) => void> =
+  private globalActivityCallbacks: Set<(activity: ActivityUpdate) => void> =
     new Set();
+
+  private projectSubscriptions: Map<number, ProjectSubscription> = new Map();
+
   private connectionCallbacks: Set<(state: ConnectionState) => void> =
     new Set();
 
-  private isSubscribed = false;
-  private subscriptionId: string | null = null;
+  private projectActivities: Map<number, ActivityUpdate[]> = new Map();
+
+  private isGlobalSubscribed = false;
+  private globalSubscriptionId: string | null = null;
   private lastHeartbeatTime: number = 0;
   private authCheckInterval: NodeJS.Timeout | null = null;
 
@@ -50,19 +76,117 @@ class SingletonWebSocketService {
 
   private messageQueue: ActivityUpdate[] = [];
   private maxQueueSize = 100;
+  private maxActivitiesPerProject = 100;
 
   private constructor() {
+    this.loadStoredActivities();
     this.setupAuthListener();
     this.setupTabVisibilityTracking();
     this.setupUnloadListener();
     this.startHeartbeat();
+    this.setupStorageCleanup();
   }
 
-  public static getInstance(): SingletonWebSocketService {
-    if (!SingletonWebSocketService.instance) {
-      SingletonWebSocketService.instance = new SingletonWebSocketService();
+  public static getInstance(): EnhancedWebSocketService {
+    if (!EnhancedWebSocketService.instance) {
+      EnhancedWebSocketService.instance = new EnhancedWebSocketService();
     }
-    return SingletonWebSocketService.instance;
+    return EnhancedWebSocketService.instance;
+  }
+
+  private loadStoredActivities(): void {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsedData: StoredActivities = JSON.parse(stored);
+        const now = Date.now();
+
+        Object.entries(parsedData).forEach(([projectIdStr, data]) => {
+          if (now - data.lastUpdated < STORAGE_EXPIRY) {
+            const projectId = parseInt(projectIdStr);
+            this.projectActivities.set(projectId, data.activities);
+          }
+        });
+      }
+    } catch (error) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }
+
+  private saveProjectActivities(projectId: number): void {
+    try {
+      const activities = this.projectActivities.get(projectId) || [];
+      const stored = localStorage.getItem(STORAGE_KEY);
+      let data: StoredActivities = {};
+
+      if (stored) {
+        try {
+          data = JSON.parse(stored);
+        } catch (e) {
+          data = {};
+        }
+      }
+
+      data[projectId.toString()] = {
+        activities: activities.slice(0, this.maxActivitiesPerProject),
+        lastUpdated: Date.now(),
+      };
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private setupStorageCleanup(): void {
+    const cleanup = () => {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const data: StoredActivities = JSON.parse(stored);
+          const now = Date.now();
+          const cleaned: StoredActivities = {};
+
+          Object.entries(data).forEach(([projectId, projectData]) => {
+            if (now - projectData.lastUpdated < STORAGE_EXPIRY) {
+              cleaned[projectId] = projectData;
+            }
+          });
+
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+        }
+      } catch (error) {
+        // Silent fail
+      }
+    };
+
+    setInterval(cleanup, 60 * 60 * 1000);
+  }
+
+  public getProjectActivities(projectId: number): ActivityUpdate[] {
+    return this.projectActivities.get(projectId) || [];
+  }
+
+  private addProjectActivity(
+    projectId: number,
+    activity: ActivityUpdate
+  ): void {
+    const activities = this.projectActivities.get(projectId) || [];
+
+    const exists = activities.some(
+      (existing) =>
+        existing.id === activity.id ||
+        existing.activityId === activity.activityId
+    );
+
+    if (!exists) {
+      const updated = [activity, ...activities].slice(
+        0,
+        this.maxActivitiesPerProject
+      );
+      this.projectActivities.set(projectId, updated);
+      this.saveProjectActivities(projectId);
+    }
   }
 
   public registerTab(tabId: string): () => void {
@@ -83,6 +207,249 @@ class SingletonWebSocketService {
     };
   }
 
+  public onGlobalActivityUpdate(
+    callback: (activity: ActivityUpdate) => void
+  ): () => void {
+    this.globalActivityCallbacks.add(callback);
+
+    if (this.isConnected() && !this.isGlobalSubscribed) {
+      this.subscribeToGlobalActivities();
+    }
+
+    return () => {
+      this.globalActivityCallbacks.delete(callback);
+
+      if (this.globalActivityCallbacks.size === 0 && this.isGlobalSubscribed) {
+        this.unsubscribeFromGlobalActivities();
+      }
+    };
+  }
+
+  public onProjectActivityUpdate(
+    projectId: number,
+    callback: (activity: ActivityUpdate) => void
+  ): () => void {
+    let subscription = this.projectSubscriptions.get(projectId);
+
+    if (!subscription) {
+      subscription = {
+        projectId,
+        subscriptionId: "",
+        callbacks: new Set(),
+      };
+      this.projectSubscriptions.set(projectId, subscription);
+
+      if (this.isConnected()) {
+        this.subscribeToProjectActivities(projectId);
+      }
+    }
+
+    subscription.callbacks.add(callback);
+
+    const storedActivities = this.getProjectActivities(projectId);
+    if (storedActivities.length > 0) {
+      setTimeout(() => {
+        storedActivities.forEach((activity) => {
+          try {
+            callback(activity);
+          } catch (error) {
+            // Silent fail
+          }
+        });
+      }, 0);
+    }
+
+    return () => {
+      const sub = this.projectSubscriptions.get(projectId);
+      if (sub) {
+        sub.callbacks.delete(callback);
+
+        if (sub.callbacks.size === 0) {
+          this.unsubscribeFromProjectActivities(projectId);
+          this.projectSubscriptions.delete(projectId);
+        }
+      }
+    };
+  }
+
+  private subscribeToGlobalActivities(): void {
+    if (!this.client?.connected || this.isGlobalSubscribed) {
+      return;
+    }
+
+    try {
+      const authState = useAuthStore.getState();
+      const username = authState.user?.username || "unknown";
+      const destination = `/user/${username}/queue/activities/global`;
+
+      const subscription = this.client.subscribe(
+        destination,
+        (message: Message) => {
+          this.handleGlobalActivityMessage(message);
+        },
+        this.getAuthHeaders()
+      );
+
+      this.client.publish({
+        destination: "/app/subscribe/global",
+        body: JSON.stringify({
+          scope: "global",
+          lastSeen: new Date().toISOString(),
+        }),
+        headers: this.getAuthHeaders(),
+      });
+
+      this.isGlobalSubscribed = true;
+      this.globalSubscriptionId = subscription.id;
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private subscribeToProjectActivities(projectId: number): void {
+    if (!this.client?.connected) {
+      return;
+    }
+
+    const subscription = this.projectSubscriptions.get(projectId);
+    if (!subscription || subscription.subscriptionId) {
+      return;
+    }
+
+    try {
+      const authState = useAuthStore.getState();
+      const username = authState.user?.username || "unknown";
+      const destination = `/user/${username}/queue/activities/project/${projectId}`;
+
+      const clientSubscription = this.client.subscribe(
+        destination,
+        (message: Message) => {
+          this.handleProjectActivityMessage(projectId, message);
+        },
+        this.getAuthHeaders()
+      );
+
+      this.client.publish({
+        destination: `/app/subscribe/project/${projectId}`,
+        body: JSON.stringify({
+          scope: "project",
+          entityId: projectId,
+          lastSeen: new Date().toISOString(),
+        }),
+        headers: this.getAuthHeaders(),
+      });
+
+      subscription.subscriptionId = clientSubscription.id;
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private unsubscribeFromGlobalActivities(): void {
+    if (!this.isGlobalSubscribed || !this.globalSubscriptionId) {
+      return;
+    }
+
+    try {
+      if (this.client?.connected) {
+        this.client.publish({
+          destination: `/app/unsubscribe/${this.globalSubscriptionId}`,
+          headers: this.getAuthHeaders(),
+        });
+      }
+
+      this.isGlobalSubscribed = false;
+      this.globalSubscriptionId = null;
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private unsubscribeFromProjectActivities(projectId: number): void {
+    const subscription = this.projectSubscriptions.get(projectId);
+    if (!subscription || !subscription.subscriptionId) {
+      return;
+    }
+
+    try {
+      if (this.client?.connected) {
+        this.client.publish({
+          destination: `/app/unsubscribe/${subscription.subscriptionId}`,
+          headers: this.getAuthHeaders(),
+        });
+      }
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private handleGlobalActivityMessage(message: Message): void {
+    try {
+      const activity: ActivityUpdate = JSON.parse(message.body);
+      this.processActivityMessage(activity, this.globalActivityCallbacks);
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private handleProjectActivityMessage(
+    projectId: number,
+    message: Message
+  ): void {
+    try {
+      const activity: ActivityUpdate = JSON.parse(message.body);
+
+      this.addProjectActivity(projectId, activity);
+
+      const subscription = this.projectSubscriptions.get(projectId);
+      if (subscription) {
+        this.processActivityMessage(activity, subscription.callbacks);
+      }
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  private processActivityMessage(
+    activity: ActivityUpdate,
+    callbacks: Set<(activity: ActivityUpdate) => void>
+  ): void {
+    if (this.hasVisibleTab) {
+      this.notifyCallbacks(activity, callbacks);
+    } else {
+      this.messageQueue.push(activity);
+
+      if (this.messageQueue.length > this.maxQueueSize) {
+        this.messageQueue.shift();
+      }
+    }
+  }
+
+  private notifyCallbacks(
+    activity: ActivityUpdate,
+    callbacks: Set<(activity: ActivityUpdate) => void>
+  ): void {
+    if ("requestAnimationFrame" in window) {
+      requestAnimationFrame(() => {
+        callbacks.forEach((callback) => {
+          try {
+            callback(activity);
+          } catch (error) {
+            // Silent fail
+          }
+        });
+      });
+    } else {
+      callbacks.forEach((callback) => {
+        try {
+          callback(activity);
+        } catch (error) {
+          // Silent fail
+        }
+      });
+    }
+  }
+
   private setupTabVisibilityTracking(): void {
     this.visibilityCheckInterval = setInterval(() => {
       this.updateVisibilityState();
@@ -99,46 +466,31 @@ class SingletonWebSocketService {
       this.messageQueue = [];
 
       messages.forEach((activity) => {
-        this.notifyActivityCallbacks(activity);
-      });
-    }
-  }
-
-  private handleActivityMessage(message: Message): void {
-    try {
-      const activity: ActivityUpdate = JSON.parse(message.body);
-
-      if (this.hasVisibleTab) {
-        this.notifyActivityCallbacks(activity);
-      } else {
-        this.messageQueue.push(activity);
-
-        if (this.messageQueue.length > this.maxQueueSize) {
-          this.messageQueue.shift();
-        }
-      }
-    } catch (error) {
-      console.error("Failed to parse activity message:", error);
-    }
-  }
-
-  private notifyActivityCallbacks(activity: ActivityUpdate): void {
-    if ("requestAnimationFrame" in window) {
-      requestAnimationFrame(() => {
-        this.activityCallbacks.forEach((callback) => {
+        this.globalActivityCallbacks.forEach((callback) => {
           try {
             callback(activity);
           } catch (error) {
-            console.error("Error in activity callback:", error);
+            // Silent fail
           }
         });
-      });
-    } else {
-      this.activityCallbacks.forEach((callback) => {
-        try {
-          callback(activity);
-        } catch (error) {
-          console.error("Error in activity callback:", error);
+
+        if (
+          activity.project &&
+          typeof activity.project === "object" &&
+          activity.project.id
+        ) {
+          const subscription = this.projectSubscriptions.get(
+            activity.project.id
+          );
+          if (subscription) {
+            subscription.callbacks.forEach((callback) => {
+              try {
+                callback(activity);
+              } catch (error) {
+                // Silent fail
+              }
+            });
+          }
         }
       });
     }
@@ -162,56 +514,114 @@ class SingletonWebSocketService {
     }, 10000);
   }
 
-  public disconnect(): void {
-    [
-      this.reconnectTimeout,
-      this.heartbeatInterval,
-      this.authCheckInterval,
-      this.visibilityCheckInterval,
-    ].forEach((interval) => {
-      if (interval) {
-        clearTimeout(interval);
-        clearInterval(interval);
+  public sendHeartbeat(): void {
+    if (this.client?.connected) {
+      try {
+        const now = Date.now();
+        if (now - this.lastHeartbeatTime < 5000) {
+          return;
+        }
+
+        this.client.publish({
+          destination: "/app/heartbeat",
+          body: JSON.stringify({
+            timestamp: new Date().toISOString(),
+          }),
+          headers: this.getAuthHeaders(),
+        });
+
+        this.setLastHeartbeatTime(now);
+      } catch (error) {
+        // Silent fail
       }
-    });
-
-    this.reconnectTimeout = null;
-    this.heartbeatInterval = null;
-    this.authCheckInterval = null;
-    this.visibilityCheckInterval = null;
-
-    this.messageQueue = [];
-    this.isSubscribed = false;
-    this.subscriptionId = null;
-    this.reconnectAttempts = 0;
-
-    if (this.client) {
-      this.client.deactivate();
-      this.client = null;
     }
-
-    this.setConnectionState("disconnected");
   }
 
-  public getDebugInfo() {
-    return {
-      connectionState: this.connectionState,
-      isConnected: this.isConnected(),
-      isSubscribed: this.isSubscribed,
-      subscriptionId: this.subscriptionId,
-      reconnectAttempts: this.reconnectAttempts,
-      shouldBeConnected: this.shouldBeConnected(),
-      clientActive: this.client?.active,
-      clientConnected: this.client?.connected,
-      activeCallbacks: this.activityCallbacks.size,
-      connectionCallbacks: this.connectionCallbacks.size,
-      activeTabs: this.activeTabs.size,
-      hasVisibleTab: this.hasVisibleTab,
-      queuedMessages: this.messageQueue.length,
-      lastHeartbeat: this.lastHeartbeatTime
-        ? new Date(this.lastHeartbeatTime).toISOString()
-        : "never",
+  public clearProjectActivities(projectId: number): void {
+    this.projectActivities.delete(projectId);
+
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const data: StoredActivities = JSON.parse(stored);
+        delete data[projectId.toString()];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      }
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  public clearAllStoredActivities(): void {
+    this.projectActivities.clear();
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  private setupClient(): void {
+    if (this.client) {
+      this.client.deactivate();
+    }
+
+    const wsUrl =
+      process.env.NODE_ENV === "development"
+        ? "ws://localhost:3000/ws"
+        : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
+            window.location.host
+          }/ws`;
+
+    const stompConfig: StompConfig = {
+      brokerURL: wsUrl,
+      connectHeaders: this.getAuthHeaders(),
+      reconnectDelay: 2000,
+      heartbeatIncoming: 30000,
+      heartbeatOutgoing: 30000,
+      onConnect: (frame) => {
+        this.reconnectAttempts = 0;
+        this.setConnectionState("connected");
+        this.resubscribeAll();
+      },
+      onDisconnect: (frame) => {
+        this.resetSubscriptions();
+        this.setConnectionState("disconnected");
+        this.scheduleReconnect();
+      },
+      onStompError: (frame) => {
+        this.setConnectionState("error");
+        this.scheduleReconnect();
+      },
+      onWebSocketError: (error) => {
+        this.setConnectionState("error");
+        this.scheduleReconnect();
+      },
+      onWebSocketClose: (event) => {
+        this.setConnectionState("disconnected");
+        this.scheduleReconnect();
+      },
     };
+
+    this.client = new Client(stompConfig);
+  }
+
+  private resubscribeAll(): void {
+    if (this.globalActivityCallbacks.size > 0) {
+      this.subscribeToGlobalActivities();
+    }
+
+    this.projectSubscriptions.forEach((subscription, projectId) => {
+      if (subscription.callbacks.size > 0) {
+        subscription.subscriptionId = "";
+        this.subscribeToProjectActivities(projectId);
+      }
+    });
+  }
+
+  private resetSubscriptions(): void {
+    this.isGlobalSubscribed = false;
+    this.globalSubscriptionId = null;
+
+    this.projectSubscriptions.forEach((subscription) => {
+      subscription.subscriptionId = "";
+    });
   }
 
   private setupAuthListener(): void {
@@ -273,88 +683,6 @@ class SingletonWebSocketService {
     }
   }
 
-  private setupClient(): void {
-    if (this.client) {
-      this.client.deactivate();
-    }
-
-    const wsUrl =
-      process.env.NODE_ENV === "development"
-        ? "ws://localhost:3000/ws"
-        : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
-            window.location.host
-          }/ws`;
-
-    const stompConfig: StompConfig = {
-      brokerURL: wsUrl,
-      connectHeaders: this.getAuthHeaders(),
-      reconnectDelay: 2000,
-      heartbeatIncoming: 30000,
-      heartbeatOutgoing: 30000,
-      onConnect: (frame) => {
-        this.reconnectAttempts = 0;
-        this.setConnectionState("connected");
-        this.subscribeToActivities();
-      },
-      onDisconnect: (frame) => {
-        this.isSubscribed = false;
-        this.subscriptionId = null;
-        this.setConnectionState("disconnected");
-        this.scheduleReconnect();
-      },
-      onStompError: (frame) => {
-        console.error("STOMP protocol error:", frame);
-        this.setConnectionState("error");
-        this.scheduleReconnect();
-      },
-      onWebSocketError: (error) => {
-        console.error("WebSocket transport error:", error);
-        this.setConnectionState("error");
-        this.scheduleReconnect();
-      },
-      onWebSocketClose: (event) => {
-        this.setConnectionState("disconnected");
-        this.scheduleReconnect();
-      },
-    };
-
-    this.client = new Client(stompConfig);
-  }
-
-  private subscribeToActivities(): void {
-    if (!this.client?.connected || this.isSubscribed) {
-      return;
-    }
-
-    try {
-      const authState = useAuthStore.getState();
-      const username = authState.user?.username || "unknown";
-      const destination = `/user/${username}/queue/activities/global`;
-
-      const subscription = this.client.subscribe(
-        destination,
-        (message: Message) => {
-          this.handleActivityMessage(message);
-        },
-        this.getAuthHeaders()
-      );
-
-      this.client.publish({
-        destination: "/app/subscribe/global",
-        body: JSON.stringify({
-          scope: "global",
-        }),
-        headers: this.getAuthHeaders(),
-      });
-
-      this.isSubscribed = true;
-      this.subscriptionId = subscription.id;
-    } catch (error) {
-      console.error("Failed to subscribe to activities:", error);
-      this.setConnectionState("error");
-    }
-  }
-
   private scheduleReconnect(): void {
     if (
       !this.shouldBeConnected() ||
@@ -380,9 +708,13 @@ class SingletonWebSocketService {
       try {
         callback(state);
       } catch (error) {
-        console.error("Error in connection callback:", error);
+        // Silent fail
       }
     });
+  }
+
+  private setLastHeartbeatTime(time: number): void {
+    this.lastHeartbeatTime = time;
   }
 
   public connect(): void {
@@ -405,6 +737,36 @@ class SingletonWebSocketService {
     }
   }
 
+  public disconnect(): void {
+    [
+      this.reconnectTimeout,
+      this.heartbeatInterval,
+      this.authCheckInterval,
+      this.visibilityCheckInterval,
+    ].forEach((interval) => {
+      if (interval) {
+        clearTimeout(interval);
+        clearInterval(interval);
+      }
+    });
+
+    this.reconnectTimeout = null;
+    this.heartbeatInterval = null;
+    this.authCheckInterval = null;
+    this.visibilityCheckInterval = null;
+
+    this.messageQueue = [];
+    this.resetSubscriptions();
+    this.reconnectAttempts = 0;
+
+    if (this.client) {
+      this.client.deactivate();
+      this.client = null;
+    }
+
+    this.setConnectionState("disconnected");
+  }
+
   public forceReconnect(): void {
     this.disconnect();
     setTimeout(() => {
@@ -422,15 +784,6 @@ class SingletonWebSocketService {
     return this.connectionState;
   }
 
-  public onActivityUpdate(
-    callback: (activity: ActivityUpdate) => void
-  ): () => void {
-    this.activityCallbacks.add(callback);
-    return () => {
-      this.activityCallbacks.delete(callback);
-    };
-  }
-
   public onConnectionStatusChange(
     callback: (state: ConnectionState) => void
   ): () => void {
@@ -441,32 +794,41 @@ class SingletonWebSocketService {
     };
   }
 
-  public sendHeartbeat(): void {
-    if (this.client?.connected) {
-      try {
-        const now = Date.now();
-        if (now - this.lastHeartbeatTime < 5000) {
-          return;
-        }
-
-        this.client.publish({
-          destination: "/app/heartbeat",
-          body: JSON.stringify({
-            timestamp: new Date().toISOString(),
-          }),
-          headers: this.getAuthHeaders(),
-        });
-
-        this.setLastHeartbeatTime(now);
-      } catch (error) {
-        console.error("Failed to send heartbeat:", error);
-      }
-    }
+  public onActivityUpdate(
+    callback: (activity: ActivityUpdate) => void
+  ): () => void {
+    return this.onGlobalActivityUpdate(callback);
   }
 
-  private setLastHeartbeatTime(time: number): void {
-    this.lastHeartbeatTime = time;
+  public getDebugInfo() {
+    return {
+      connectionState: this.connectionState,
+      isConnected: this.isConnected(),
+      isGlobalSubscribed: this.isGlobalSubscribed,
+      globalSubscriptionId: this.globalSubscriptionId,
+      projectSubscriptions: Array.from(this.projectSubscriptions.entries()).map(
+        ([projectId, subscription]) => ({
+          projectId,
+          subscriptionId: subscription.subscriptionId,
+          callbackCount: subscription.callbacks.size,
+          storedActivities: this.projectActivities.get(projectId)?.length || 0,
+        })
+      ),
+      storedProjectCount: this.projectActivities.size,
+      reconnectAttempts: this.reconnectAttempts,
+      shouldBeConnected: this.shouldBeConnected(),
+      clientActive: this.client?.active,
+      clientConnected: this.client?.connected,
+      globalCallbacks: this.globalActivityCallbacks.size,
+      connectionCallbacks: this.connectionCallbacks.size,
+      activeTabs: this.activeTabs.size,
+      hasVisibleTab: this.hasVisibleTab,
+      queuedMessages: this.messageQueue.length,
+      lastHeartbeat: this.lastHeartbeatTime
+        ? new Date(this.lastHeartbeatTime).toISOString()
+        : "never",
+    };
   }
 }
 
-export const websocketService = SingletonWebSocketService.getInstance();
+export const websocketService = EnhancedWebSocketService.getInstance();
