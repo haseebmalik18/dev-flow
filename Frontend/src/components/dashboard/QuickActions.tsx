@@ -67,7 +67,7 @@ export const QuickActions: React.FC = () => {
       icon: <BarChart3 className="w-6 h-6 text-orange-600" />,
       title: "View Reports",
       description: "Analyze project performance",
-      onClick: () => navigate("/projects"),
+      onClick: () => navigate("/analytics"),
       color: "bg-orange-100",
     },
   ];

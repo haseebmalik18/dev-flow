@@ -21,13 +21,13 @@ import { ProjectDetailPage } from "./pages/projects/ProjectDetailPage";
 import { EditProjectPage } from "./pages/projects/EditProjectPage";
 import { TasksPage } from "./pages/tasks/TasksPage";
 import { TaskDetailPage } from "./pages/tasks/TaskDetailPage";
+import { AnalyticsPage } from "./pages/analytics/AnalyticsPage";
 
 import { InvitationResponsePage } from "./pages/invitations/InvitationResponsePage";
 
 import { useAuthStore } from "./hooks/useAuthStore";
 import { useWebSocket } from "./hooks/useWebSocket";
 
-// Type guard for axios-like errors
 function isAxiosError(
   error: unknown
 ): error is { response: { status: number } } {
@@ -192,6 +192,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <TaskDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute>
+                  <AnalyticsPage />
                 </ProtectedRoute>
               }
             />
