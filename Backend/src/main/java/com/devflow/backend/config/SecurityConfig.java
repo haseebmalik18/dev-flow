@@ -108,7 +108,8 @@ public class SecurityConfig {
                 "http://localhost:5173",
                 "http://localhost:8080",
                 "https://devflow-*.vercel.app",
-                "https://your-production-domain.com"
+                "https://your-production-domain.com",
+                "https://d8f0-2600-4808-5392-d600-88bc-3f9a-3ae0-758a.ngrok-free.app"
         ));
 
         // Allow specific HTTP methods including file upload
