@@ -32,14 +32,25 @@ public class GitHubOAuthService {
     @Value("${github.oauth.client-secret}")
     private String clientSecret;
 
-    @Value("${github.oauth.redirect-uri}")
-    private String redirectUri;
+    @Value("${github.oauth.redirect-uri:}")
+    private String configuredRedirectUri;
 
     @Value("${github.oauth.scope:repo,user:email}")
     private String scope;
 
-    @Value("${app.base-url}")
+    @Value("${app.base-url:}")
     private String baseUrl;
+
+    // Add ngrok URL support
+    @Value("${app.ngrok-url:}")
+    private String ngrokUrl;
+
+    @Value("${app.backend-base-url:}")
+    private String backendBaseUrl;
+
+    // Add ngrok frontend URL support
+    @Value("${app.ngrok-frontend-url:}")
+    private String ngrokFrontendUrl;
 
     // Store temporary state for OAuth flow security
     private final Map<String, OAuthState> stateStore = new ConcurrentHashMap<>();
@@ -58,6 +69,7 @@ public class GitHubOAuthService {
      */
     public String generateAuthorizationUrl(User user, Long projectId) {
         String state = generateSecureState(user, projectId);
+        String redirectUri = getRedirectUri();
 
         String authUrl = UriComponentsBuilder
                 .fromHttpUrl("https://github.com/login/oauth/authorize")
@@ -69,7 +81,8 @@ public class GitHubOAuthService {
                 .build()
                 .toUriString();
 
-        log.info("Generated GitHub OAuth URL for user: {} and project: {}", user.getUsername(), projectId);
+        log.info("Generated GitHub OAuth URL for user: {} and project: {} with redirect URI: {}",
+                user.getUsername(), projectId, redirectUri);
         return authUrl;
     }
 
@@ -78,6 +91,9 @@ public class GitHubOAuthService {
      */
     public GitHubAuthResponse handleOAuthCallback(GitHubAuthRequest request, String userAgent) {
         try {
+            log.info("Handling GitHub OAuth callback with code: {} and state: {}",
+                    request.getCode() != null ? "present" : "null", request.getState());
+
             // Validate state
             OAuthState oauthState = validateState(request.getState(), userAgent);
             if (oauthState == null) {
@@ -118,6 +134,8 @@ public class GitHubOAuthService {
      */
     public RepositorySearchResult searchRepositories(String accessToken, String query, int page, int perPage) {
         try {
+            log.info("Searching GitHub repositories with query: {}, page: {}, perPage: {}", query, page, perPage);
+
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -159,6 +177,8 @@ public class GitHubOAuthService {
      */
     public RepositoryInfo getRepositoryInfo(String accessToken, String owner, String repo) {
         try {
+            log.info("Getting repository info for {}/{}", owner, repo);
+
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -226,6 +246,30 @@ public class GitHubOAuthService {
 
     // Private helper methods
 
+    /**
+     * Get the appropriate redirect URI based on configuration and environment
+     */
+    private String getRedirectUri() {
+        // Priority order: configured redirect URI > ngrok URL > backend base URL > base URL
+        String redirectUri;
+
+        if (configuredRedirectUri != null && !configuredRedirectUri.trim().isEmpty()) {
+            redirectUri = configuredRedirectUri;
+        } else if (ngrokUrl != null && !ngrokUrl.trim().isEmpty()) {
+            redirectUri = ngrokUrl + "/api/v1/github/oauth/callback";
+        } else if (backendBaseUrl != null && !backendBaseUrl.trim().isEmpty()) {
+            redirectUri = backendBaseUrl + "/api/v1/github/oauth/callback";
+        } else if (baseUrl != null && !baseUrl.trim().isEmpty()) {
+            redirectUri = baseUrl + "/api/v1/github/oauth/callback";
+        } else {
+            // Fallback for development
+            redirectUri = "http://localhost:3000/api/v1/github/oauth/callback";
+        }
+
+        log.info("Using GitHub OAuth redirect URI: {}", redirectUri);
+        return redirectUri;
+    }
+
     private String generateSecureState(User user, Long projectId) {
         String state = UUID.randomUUID().toString();
         OAuthState oauthState = new OAuthState(user, projectId, LocalDateTime.now(), "web");
@@ -234,34 +278,47 @@ public class GitHubOAuthService {
         // Schedule cleanup of old states
         cleanupExpiredStates();
 
+        log.debug("Generated OAuth state for user {} and project {}", user.getId(), projectId);
         return state;
     }
 
     private OAuthState validateState(String state, String userAgent) {
+        if (state == null || state.trim().isEmpty()) {
+            log.warn("Received null or empty state parameter");
+            return null;
+        }
+
         OAuthState oauthState = stateStore.get(state);
 
         if (oauthState == null) {
+            log.warn("Invalid or already consumed state parameter: {}", state);
             return null;
         }
 
         // Check if state is expired (15 minutes)
         if (oauthState.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(15))) {
             stateStore.remove(state);
+            log.warn("Expired state parameter: {}", state);
             return null;
         }
 
+        log.debug("Validated OAuth state for user {} and project {}",
+                oauthState.getUser().getId(), oauthState.getProjectId());
         return oauthState;
     }
 
     private String exchangeCodeForToken(String code) {
         try {
+            log.info("Exchanging authorization code for access token");
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
             headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            headers.set("User-Agent", "DevFlow-App/1.0");
 
             String body = String.format(
                     "client_id=%s&client_secret=%s&code=%s&redirect_uri=%s",
-                    clientId, clientSecret, code, redirectUri
+                    clientId, clientSecret, code, getRedirectUri()
             );
 
             HttpEntity<String> entity = new HttpEntity<>(body, headers);
@@ -275,10 +332,20 @@ public class GitHubOAuthService {
                 JsonNode responseBody = response.getBody();
 
                 if (responseBody.has("error")) {
-                    throw new RuntimeException("GitHub OAuth error: " + responseBody.get("error_description").asText());
+                    String error = responseBody.get("error").asText();
+                    String errorDescription = responseBody.has("error_description")
+                            ? responseBody.get("error_description").asText()
+                            : "Unknown error";
+                    throw new RuntimeException("GitHub OAuth error: " + error + " - " + errorDescription);
                 }
 
-                return responseBody.get("access_token").asText();
+                if (!responseBody.has("access_token")) {
+                    throw new RuntimeException("No access token received from GitHub");
+                }
+
+                String accessToken = responseBody.get("access_token").asText();
+                log.info("Successfully obtained access token");
+                return accessToken;
             }
 
             throw new RuntimeException("Failed to exchange code for token");
@@ -291,6 +358,8 @@ public class GitHubOAuthService {
 
     private UserInfo getGitHubUserInfo(String accessToken) {
         try {
+            log.info("Getting user info from GitHub");
+
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -322,6 +391,8 @@ public class GitHubOAuthService {
 
     private List<RepositoryInfo> getAccessibleRepositories(String accessToken) {
         try {
+            log.info("Getting accessible repositories from GitHub");
+
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -405,7 +476,18 @@ public class GitHubOAuthService {
 
     private void cleanupExpiredStates() {
         LocalDateTime expiry = LocalDateTime.now().minusMinutes(15);
-        stateStore.entrySet().removeIf(entry -> entry.getValue().getCreatedAt().isBefore(expiry));
+        int removed = 0;
+        Iterator<Map.Entry<String, OAuthState>> iterator = stateStore.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, OAuthState> entry = iterator.next();
+            if (entry.getValue().getCreatedAt().isBefore(expiry)) {
+                iterator.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            log.debug("Cleaned up {} expired OAuth states", removed);
+        }
     }
 
     /**

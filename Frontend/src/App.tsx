@@ -13,6 +13,7 @@ import { RegisterPage } from "./pages/auth/RegisterPage";
 import { VerifyEmailPage } from "./pages/auth/VerifyEmailPage";
 import { ForgotPasswordPage } from "./pages/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
+import { GitHubOAuthCallbackPage } from "./pages/auth/GitHubOAuthCallbackPage";
 
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { ProjectsPage } from "./pages/projects/ProjectsPage";
@@ -133,6 +134,12 @@ function App() {
                   <ResetPasswordPage />
                 </PublicRoute>
               }
+            />
+
+            {/* GitHub OAuth Callback - Public route */}
+            <Route
+              path="/auth/github/callback"
+              element={<GitHubOAuthCallbackPage />}
             />
 
             {/* Public Invitation Route - No auth required initially */}

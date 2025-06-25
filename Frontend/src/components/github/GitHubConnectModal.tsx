@@ -1,4 +1,4 @@
-// 1. Fix GitHubConnectModal.tsx - Add projectId validation
+// Updated GitHubConnectModal.tsx with ngrok support and improved error handling
 import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
@@ -21,7 +21,7 @@ import {
   useSearchGitHubRepositories,
   useCreateGitHubConnection,
 } from "../../hooks/useGithub";
-import type { GitHubRepository } from "../../services/gitHubService";
+import type { GitHubRepository } from "../../services/githubService";
 
 interface GitHubConnectModalProps {
   isOpen: boolean;
@@ -43,6 +43,8 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     null
   );
   const [githubUserInfo, setGithubUserInfo] = useState<any>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [isOAuthInProgress, setIsOAuthInProgress] = useState(false);
 
   const gitHubOAuthMutation = useGitHubOAuth();
   const gitHubCallbackMutation = useGitHubOAuthCallback();
@@ -66,47 +68,182 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     }
   }, [isOpen, projectId, onClose]);
 
-  // Handle OAuth callback from popup window
+  // Enhanced OAuth callback handler with better error handling
   useEffect(() => {
+    if (!isOpen) return;
+
     const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
+      // Verify origin for security
+      if (event.origin !== window.location.origin) {
+        console.warn("Received message from unexpected origin:", event.origin);
+        return;
+      }
+
+      console.log("Received OAuth message:", event.data);
 
       if (event.data.type === "GITHUB_OAUTH_SUCCESS") {
         const { code, state } = event.data;
+
+        if (!code || !state) {
+          console.error("Missing code or state in OAuth success message");
+          setOauthError("Invalid OAuth response: missing authorization data");
+          setIsOAuthInProgress(false);
+          return;
+        }
+
+        console.log("Processing OAuth callback with code and state");
 
         gitHubCallbackMutation.mutate(
           { code, state },
           {
             onSuccess: (response) => {
+              console.log("OAuth callback processed successfully:", response);
               if (response.data) {
                 setAccessToken(response.data.accessToken);
                 setGithubUserInfo(response.data.userInfo);
                 setStep("search");
+                setOauthError(null);
+                setIsOAuthInProgress(false);
+              } else {
+                setOauthError("Invalid response from OAuth callback");
+                setIsOAuthInProgress(false);
               }
+            },
+            onError: (error: any) => {
+              console.error("OAuth callback error:", error);
+              const errorMessage =
+                error.response?.data?.message ||
+                error.message ||
+                "Unknown error occurred";
+              setOauthError(
+                `Failed to complete GitHub authorization: ${errorMessage}`
+              );
+              setIsOAuthInProgress(false);
             },
           }
         );
       }
 
       if (event.data.type === "GITHUB_OAUTH_ERROR") {
-        console.error("GitHub OAuth error:", event.data.error);
+        console.error("GitHub OAuth error:", event.data);
+        const errorMessage =
+          event.data.description ||
+          event.data.error ||
+          "Unknown error occurred";
+        setOauthError(`GitHub authorization failed: ${errorMessage}`);
+        setIsOAuthInProgress(false);
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [gitHubCallbackMutation]);
+  }, [isOpen, gitHubCallbackMutation]);
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setStep("oauth");
+      setAccessToken("");
+      setSearchQuery("");
+      setSelectedRepo(null);
+      setGithubUserInfo(null);
+      setOauthError(null);
+      setIsOAuthInProgress(false);
+    }
+  }, [isOpen]);
 
   const handleStartOAuth = useCallback(() => {
     // CRITICAL FIX: Validate projectId before making request
     if (!projectId || isNaN(projectId) || projectId <= 0) {
       console.error("Cannot start OAuth: invalid projectId", projectId);
-      alert("Invalid project ID. Please refresh the page and try again.");
+      setOauthError(
+        "Invalid project ID. Please refresh the page and try again."
+      );
       return;
     }
 
+    // Clear any previous errors
+    setOauthError(null);
+    setIsOAuthInProgress(true);
+
     console.log("Starting OAuth for projectId:", projectId);
-    gitHubOAuthMutation.mutate(projectId);
+
+    gitHubOAuthMutation.mutate(projectId, {
+      onSuccess: (response) => {
+        if (response.data?.authorizationUrl) {
+          console.log(
+            "Opening OAuth popup with URL:",
+            response.data.authorizationUrl
+          );
+
+          // Store current location for redirect after OAuth
+          sessionStorage.setItem(
+            "github_oauth_redirect",
+            window.location.pathname
+          );
+
+          // Open popup window with specific features for better compatibility
+          const popup = window.open(
+            response.data.authorizationUrl,
+            "github-oauth",
+            "width=600,height=700,scrollbars=yes,resizable=yes,status=yes,location=yes"
+          );
+
+          if (!popup) {
+            setOauthError(
+              "Please allow popups for this site to connect with GitHub."
+            );
+            setIsOAuthInProgress(false);
+            return;
+          }
+
+          // Focus the popup
+          popup.focus();
+
+          // Check if popup was closed manually
+          const checkClosed = setInterval(() => {
+            if (popup.closed) {
+              clearInterval(checkClosed);
+              console.log("OAuth popup was closed manually");
+              setIsOAuthInProgress(false);
+            }
+          }, 1000);
+
+          // Set a timeout to close popup if it takes too long (5 minutes)
+          const timeout = setTimeout(() => {
+            if (!popup.closed) {
+              popup.close();
+              clearInterval(checkClosed);
+              console.log("OAuth popup timed out");
+              setOauthError("OAuth process timed out. Please try again.");
+              setIsOAuthInProgress(false);
+            }
+          }, 5 * 60 * 1000);
+
+          // Clean up timeout if popup closes normally
+          const originalCheckClosed = checkClosed;
+          const enhancedCheckClosed = setInterval(() => {
+            if (popup.closed) {
+              clearInterval(enhancedCheckClosed);
+              clearTimeout(timeout);
+              setIsOAuthInProgress(false);
+            }
+          }, 1000);
+        } else {
+          setOauthError("Failed to get authorization URL from server");
+          setIsOAuthInProgress(false);
+        }
+      },
+      onError: (error: any) => {
+        console.error("Failed to initiate OAuth:", error);
+        const errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          "Unknown error occurred";
+        setOauthError(`Failed to initiate GitHub OAuth: ${errorMessage}`);
+        setIsOAuthInProgress(false);
+      },
+    });
   }, [gitHubOAuthMutation, projectId]);
 
   const handleSelectRepository = useCallback((repo: GitHubRepository) => {
@@ -141,6 +278,16 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           setSearchQuery("");
           setSelectedRepo(null);
           setGithubUserInfo(null);
+          setOauthError(null);
+          setIsOAuthInProgress(false);
+        },
+        onError: (error: any) => {
+          console.error("Failed to create connection:", error);
+          const errorMessage =
+            error.response?.data?.message ||
+            error.message ||
+            "Unknown error occurred";
+          alert(`Failed to connect repository: ${errorMessage}`);
         },
       }
     );
@@ -157,7 +304,15 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     setSearchQuery("");
     setSelectedRepo(null);
     setGithubUserInfo(null);
+    setOauthError(null);
+    setIsOAuthInProgress(false);
   }, []);
+
+  const handleRetryOAuth = useCallback(() => {
+    setOauthError(null);
+    setIsOAuthInProgress(false);
+    handleStartOAuth();
+  }, [handleStartOAuth]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -200,6 +355,27 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
         {/* Content */}
         <div className="p-6">
+          {/* Error Display */}
+          {oauthError && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-red-800">
+                    Connection Error
+                  </h3>
+                  <p className="text-sm text-red-700 mt-1">{oauthError}</p>
+                  <button
+                    onClick={handleRetryOAuth}
+                    className="mt-3 text-sm text-red-600 hover:text-red-800 font-medium"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Step 1: OAuth */}
           {step === "oauth" && (
             <div className="text-center py-8">
@@ -217,12 +393,14 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
               <Button
                 onClick={handleStartOAuth}
-                loading={gitHubOAuthMutation.isPending}
+                loading={gitHubOAuthMutation.isPending || isOAuthInProgress}
                 icon={<Github className="w-5 h-5" />}
                 className="bg-gray-900 hover:bg-gray-800"
                 disabled={!projectId || isNaN(projectId) || projectId <= 0}
               >
-                Authorize GitHub Access
+                {isOAuthInProgress
+                  ? "Opening GitHub..."
+                  : "Authorize GitHub Access"}
               </Button>
 
               <div className="mt-6 text-sm text-gray-500">
@@ -230,6 +408,11 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 <p className="mt-1">
                   We only request the minimum permissions needed.
                 </p>
+                {isOAuthInProgress && (
+                  <p className="mt-2 text-blue-600 font-medium">
+                    Please complete the authorization in the popup window.
+                  </p>
+                )}
               </div>
             </div>
           )}

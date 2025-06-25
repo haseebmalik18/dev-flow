@@ -17,6 +17,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -337,6 +340,75 @@ public class GitHubController {
         // This would reset connection errors and force resync
         return ResponseEntity.ok(ApiResponse.success("Connection reset successfully"));
     }
+
+    @GetMapping("/oauth/callback")
+    public String handleOAuthCallbackRedirect(
+            @RequestParam("code") String code,
+            @RequestParam("state") String state,
+            @RequestParam(value = "error", required = false) String error,
+            @RequestParam(value = "error_description", required = false) String errorDescription,
+            HttpServletRequest request) {
+
+        // Log the callback for debugging
+        log.info("GitHub OAuth callback received: code={}, state={}, error={}",
+                code != null ? "present" : "null", state, error);
+
+        // Build the frontend callback URL
+        String baseUrl = getBaseUrl(request);
+        StringBuilder callbackUrl = new StringBuilder(baseUrl + "/auth/github/callback");
+
+        // Add query parameters
+        List<String> params = new ArrayList<>();
+        if (code != null) {
+            params.add("code=" + URLEncoder.encode(code, StandardCharsets.UTF_8));
+        }
+        if (state != null) {
+            params.add("state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
+        }
+        if (error != null) {
+            params.add("error=" + URLEncoder.encode(error, StandardCharsets.UTF_8));
+        }
+        if (errorDescription != null) {
+            params.add("error_description=" + URLEncoder.encode(errorDescription, StandardCharsets.UTF_8));
+        }
+
+        if (!params.isEmpty()) {
+            callbackUrl.append("?").append(String.join("&", params));
+        }
+
+        // Redirect to frontend callback page
+        return "redirect:" + callbackUrl.toString();
+    }
+
+    private String getBaseUrl(HttpServletRequest request) {
+        String scheme = request.getScheme();
+        String serverName = request.getServerName();
+        int serverPort = request.getServerPort();
+
+        // Check for ngrok forwarding
+        String forwardedHost = request.getHeader("X-Forwarded-Host");
+        String forwardedProto = request.getHeader("X-Forwarded-Proto");
+
+        if (forwardedHost != null && forwardedProto != null) {
+            // ngrok is forwarding the request - use the ngrok frontend URL
+            return "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app";
+        }
+
+        // For development, typically frontend runs on port 8080 while backend on 3000
+        if ("localhost".equals(serverName) || "127.0.0.1".equals(serverName)) {
+            return "http://localhost:8080"; // Frontend port
+        }
+
+        StringBuilder url = new StringBuilder();
+        url.append(scheme).append("://").append(serverName);
+
+        if (serverPort != 80 && serverPort != 443) {
+            url.append(":").append(serverPort);
+        }
+
+        return url.toString();
+    }
+
 
     // Error handling
 
