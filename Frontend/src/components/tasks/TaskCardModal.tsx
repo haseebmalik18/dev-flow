@@ -818,6 +818,8 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
                 <GitHubTaskIntegration
                   taskId={task.id}
                   taskTitle={task.title}
+                  projectId={task.project.id}
+                  projectName={task.project.name}
                 />
               )}
             </div>
