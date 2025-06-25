@@ -1,75 +1,96 @@
-// Frontend/src/pages/auth/GitHubOAuthCallbackPage.tsx
 import React, { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { Github, CheckCircle, X, AlertTriangle } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Loader2, CheckCircle, XCircle, Github } from "lucide-react";
 
 export const GitHubOAuthCallbackPage: React.FC = () => {
-  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<"processing" | "success" | "error">(
     "processing"
   );
   const [message, setMessage] = useState("Processing GitHub authorization...");
 
   useEffect(() => {
-    const handleCallback = () => {
+    const processCallback = () => {
       try {
-        const urlParams = new URLSearchParams(location.search);
-        const code = urlParams.get("code");
-        const state = urlParams.get("state");
-        const error = urlParams.get("error");
-        const errorDescription = urlParams.get("error_description");
+        // Get parameters from URL
+        const code = searchParams.get("code");
+        const state = searchParams.get("state");
+        const error = searchParams.get("error");
+        const errorDescription = searchParams.get("error_description");
 
-        // Check if we're in a popup window
-        const isPopup = window.opener && window.opener !== window;
+        console.log("GitHub OAuth callback received:", {
+          code: code ? "present" : "missing",
+          state: state ? "present" : "missing",
+          error,
+          errorDescription,
+        });
 
         if (error) {
-          setStatus("error");
-          setMessage(errorDescription || "GitHub authorization failed");
+          // Handle OAuth error
+          const errorMsg =
+            errorDescription || error || "Unknown error occurred";
+          console.error("GitHub OAuth error:", errorMsg);
 
-          if (isPopup) {
+          setStatus("error");
+          setMessage(`Authorization failed: ${errorMsg}`);
+
+          // Send error message to parent window
+          if (window.opener) {
             window.opener.postMessage(
               {
                 type: "GITHUB_OAUTH_ERROR",
                 error: error,
                 description: errorDescription,
+                message: errorMsg,
               },
               window.location.origin
             );
-
-            setTimeout(() => {
-              window.close();
-            }, 3000);
           }
+
+          // Close popup after showing error briefly
+          setTimeout(() => {
+            window.close();
+          }, 3000);
+
           return;
         }
 
         if (!code || !state) {
-          setStatus("error");
-          setMessage("Missing authorization code or state parameter");
+          const errorMsg = "Missing authorization code or state parameter";
+          console.error("GitHub OAuth error:", errorMsg);
 
-          if (isPopup) {
+          setStatus("error");
+          setMessage(errorMsg);
+
+          // Send error message to parent window
+          if (window.opener) {
             window.opener.postMessage(
               {
                 type: "GITHUB_OAUTH_ERROR",
                 error: "missing_parameters",
-                description: "Missing authorization code or state parameter",
+                description: errorMsg,
+                message: errorMsg,
               },
               window.location.origin
             );
-
-            setTimeout(() => {
-              window.close();
-            }, 3000);
           }
+
+          // Close popup after showing error briefly
+          setTimeout(() => {
+            window.close();
+          }, 3000);
+
           return;
         }
 
         // Success case
-        setStatus("success");
-        setMessage("Authorization successful! Redirecting...");
+        console.log("GitHub OAuth success, sending data to parent window");
 
-        if (isPopup) {
-          // Send success message to parent window
+        setStatus("success");
+        setMessage("Authorization successful! Closing window...");
+
+        // Send success message to parent window
+        if (window.opener) {
           window.opener.postMessage(
             {
               type: "GITHUB_OAUTH_SUCCESS",
@@ -78,61 +99,75 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
             },
             window.location.origin
           );
-
-          // Close popup after a short delay
-          setTimeout(() => {
-            window.close();
-          }, 1500);
-        } else {
-          // If not in popup, redirect to main app
-          const redirectUrl =
-            sessionStorage.getItem("github_oauth_redirect") || "/dashboard";
-          sessionStorage.removeItem("github_oauth_redirect");
-
-          setTimeout(() => {
-            window.location.href = redirectUrl;
-          }, 2000);
         }
+
+        // Close popup after brief delay
+        setTimeout(() => {
+          window.close();
+        }, 1000);
       } catch (error) {
-        console.error("Error handling GitHub OAuth callback:", error);
+        console.error("Error processing GitHub OAuth callback:", error);
+
         setStatus("error");
         setMessage(
           "An unexpected error occurred while processing the authorization"
         );
 
-        if (window.opener && window.opener !== window) {
+        // Send error message to parent window
+        if (window.opener) {
           window.opener.postMessage(
             {
               type: "GITHUB_OAUTH_ERROR",
-              error: "unexpected_error",
+              error: "processing_error",
               description: "An unexpected error occurred",
+              message:
+                "An unexpected error occurred while processing the authorization",
             },
             window.location.origin
           );
-
-          setTimeout(() => {
-            window.close();
-          }, 3000);
         }
+
+        // Close popup after showing error briefly
+        setTimeout(() => {
+          window.close();
+        }, 3000);
       }
     };
 
-    // Small delay to ensure DOM is ready
-    setTimeout(handleCallback, 100);
-  }, [location]);
+    // Small delay to ensure component is mounted
+    const timer = setTimeout(processCallback, 100);
+
+    return () => clearTimeout(timer);
+  }, [searchParams]);
+
+  // Fallback: if window doesn't close automatically, provide manual close button
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
+      if (status !== "processing") {
+        const closeButton = document.getElementById("manual-close");
+        if (closeButton) {
+          closeButton.style.display = "block";
+        }
+      }
+    }, 5000);
+
+    return () => clearTimeout(fallbackTimer);
+  }, [status]);
+
+  const handleManualClose = () => {
+    window.close();
+  };
 
   const getStatusIcon = () => {
     switch (status) {
       case "processing":
-        return (
-          <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-        );
+        return <Loader2 className="w-8 h-8 animate-spin text-blue-600" />;
       case "success":
-        return <CheckCircle className="w-16 h-16 text-green-600" />;
+        return <CheckCircle className="w-8 h-8 text-green-600" />;
       case "error":
-        return <AlertTriangle className="w-16 h-16 text-red-600" />;
+        return <XCircle className="w-8 h-8 text-red-600" />;
       default:
-        return <Github className="w-16 h-16 text-gray-400" />;
+        return <Loader2 className="w-8 h-8 animate-spin text-blue-600" />;
     }
   };
 
@@ -145,60 +180,49 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
       case "error":
         return "text-red-600";
       default:
-        return "text-gray-600";
+        return "text-blue-600";
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
-        <div className="text-center">
-          {/* GitHub Logo */}
-          <div className="mb-6">
-            <div className="w-12 h-12 bg-gray-900 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <Github className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              GitHub Authorization
-            </h1>
+      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-8 max-w-md w-full text-center">
+        <div className="mb-6">
+          <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Github className="w-8 h-8 text-white" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            GitHub Authorization
+          </h1>
+        </div>
 
-          {/* Status Icon */}
-          <div className="mb-6 flex justify-center">{getStatusIcon()}</div>
+        <div className="mb-6">
+          <div className="flex justify-center mb-4">{getStatusIcon()}</div>
+          <p className={`text-lg font-medium ${getStatusColor()}`}>{message}</p>
+        </div>
 
-          {/* Status Message */}
-          <div className="mb-6">
-            <h2 className={`text-lg font-semibold mb-2 ${getStatusColor()}`}>
-              {status === "processing" && "Processing..."}
-              {status === "success" && "Success!"}
-              {status === "error" && "Error"}
-            </h2>
-            <p className="text-gray-600 text-sm">{message}</p>
+        {status === "success" && (
+          <div className="text-sm text-gray-600 mb-4">
+            You can close this window and return to DevFlow.
           </div>
+        )}
 
-          {/* Additional Info */}
-          <div className="text-xs text-gray-500">
-            {status === "processing" && (
-              <p>Please wait while we complete the authorization process.</p>
-            )}
-            {status === "success" && (
-              <p>This window will close automatically.</p>
-            )}
-            {status === "error" && (
-              <p>You can safely close this window and try again.</p>
-            )}
+        {status === "error" && (
+          <div className="text-sm text-gray-600 mb-4">
+            Please try the authorization process again.
           </div>
+        )}
 
-          {/* Manual Close Button for Error State */}
-          {status === "error" && window.opener && window.opener !== window && (
-            <button
-              onClick={() => window.close()}
-              className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <X className="w-4 h-4 mr-2" />
-              Close Window
-            </button>
-          )}
+        <button
+          id="manual-close"
+          onClick={handleManualClose}
+          className="hidden bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors"
+        >
+          Close Window
+        </button>
+
+        <div className="mt-6 text-xs text-gray-500">
+          If this window doesn't close automatically, you can close it manually.
         </div>
       </div>
     </div>

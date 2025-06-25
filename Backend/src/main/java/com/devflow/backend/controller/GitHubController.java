@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -61,6 +62,81 @@ public class GitHubController {
         GitHubAuthResponse authResponse = oauthService.handleOAuthCallback(request, userAgent);
 
         return ResponseEntity.ok(ApiResponse.success("GitHub authentication successful", authResponse));
+    }
+
+    @GetMapping("/oauth/callback")
+    public String handleOAuthCallbackRedirect(
+            @RequestParam("code") String code,
+            @RequestParam("state") String state,
+            @RequestParam(value = "error", required = false) String error,
+            @RequestParam(value = "error_description", required = false) String errorDescription,
+            HttpServletRequest request) {
+
+        // Log the callback for debugging
+        log.info("GitHub OAuth callback received: code={}, state={}, error={}",
+                code != null ? "present" : "null", state, error);
+
+        // Build the frontend callback URL
+        String baseUrl = getBaseUrl(request);
+        StringBuilder callbackUrl = new StringBuilder(baseUrl + "/auth/github/callback");
+
+        // Add query parameters
+        List<String> params = new ArrayList<>();
+        if (code != null) {
+            params.add("code=" + URLEncoder.encode(code, StandardCharsets.UTF_8));
+        }
+        if (state != null) {
+            params.add("state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
+        }
+        if (error != null) {
+            params.add("error=" + URLEncoder.encode(error, StandardCharsets.UTF_8));
+        }
+        if (errorDescription != null) {
+            params.add("error_description=" + URLEncoder.encode(errorDescription, StandardCharsets.UTF_8));
+        }
+
+        if (!params.isEmpty()) {
+            callbackUrl.append("?").append(String.join("&", params));
+        }
+
+        // Redirect to frontend callback page
+        return "redirect:" + callbackUrl.toString();
+    }
+
+    /**
+     * Development endpoint to reset OAuth state for testing
+     * This clears local state and provides guidance for full reset
+     */
+    @PostMapping("/oauth/reset")
+    public ResponseEntity<ApiResponse<Map<String, String>>> resetOAuthForTesting(
+            @RequestParam Long projectId,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+
+        try {
+            // Clear any stored OAuth state for this user/project
+            // This would depend on how your OAuth service stores state
+            // If you have stored tokens or state, clear them here
+            // oauthService.clearStoredState(user.getId(), projectId);
+
+            log.info("Reset OAuth state for user {} and project {} for testing",
+                    user.getId(), projectId);
+
+            Map<String, String> response = Map.of(
+                    "message", "OAuth state cleared for testing",
+                    "note", "To fully reset, also revoke authorization at: https://github.com/settings/applications",
+                    "instructions", "1. Clear local state (done), 2. Revoke on GitHub, 3. Try OAuth again",
+                    "githubUrl", "https://github.com/settings/applications"
+            );
+
+            return ResponseEntity.ok(ApiResponse.success("OAuth state reset for development testing", response));
+
+        } catch (Exception e) {
+            log.error("Failed to reset OAuth state: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to reset OAuth state: " + e.getMessage()));
+        }
     }
 
     @GetMapping("/repositories/search")
@@ -145,6 +221,43 @@ public class GitHubController {
         SyncResponse syncResponse = githubService.syncConnection(connectionId, user);
 
         return ResponseEntity.ok(ApiResponse.success("Connection sync completed", syncResponse));
+    }
+
+    // Development endpoints for clearing connections
+    @DeleteMapping("/dev/projects/{projectId}/connections/clear")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> clearProjectConnections(
+            @PathVariable Long projectId,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+
+        try {
+            // Get all connections for the project
+            List<ConnectionResponse> connections = githubService.getProjectConnections(projectId, user);
+
+            int deletedCount = 0;
+            // Delete each connection
+            for (ConnectionResponse connection : connections) {
+                githubService.deleteConnection(connection.getId(), user);
+                deletedCount++;
+                log.info("Deleted GitHub connection {} for development testing", connection.getId());
+            }
+
+            Map<String, Object> response = Map.of(
+                    "message", "Cleared GitHub connections for project " + projectId,
+                    "deletedConnections", deletedCount,
+                    "projectId", projectId
+            );
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    "Cleared " + deletedCount + " GitHub connections for project " + projectId, response
+            ));
+
+        } catch (Exception e) {
+            log.error("Failed to clear project connections: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to clear project connections: " + e.getMessage()));
+        }
     }
 
     // Commits endpoints
@@ -341,45 +454,7 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("Connection reset successfully"));
     }
 
-    @GetMapping("/oauth/callback")
-    public String handleOAuthCallbackRedirect(
-            @RequestParam("code") String code,
-            @RequestParam("state") String state,
-            @RequestParam(value = "error", required = false) String error,
-            @RequestParam(value = "error_description", required = false) String errorDescription,
-            HttpServletRequest request) {
-
-        // Log the callback for debugging
-        log.info("GitHub OAuth callback received: code={}, state={}, error={}",
-                code != null ? "present" : "null", state, error);
-
-        // Build the frontend callback URL
-        String baseUrl = getBaseUrl(request);
-        StringBuilder callbackUrl = new StringBuilder(baseUrl + "/auth/github/callback");
-
-        // Add query parameters
-        List<String> params = new ArrayList<>();
-        if (code != null) {
-            params.add("code=" + URLEncoder.encode(code, StandardCharsets.UTF_8));
-        }
-        if (state != null) {
-            params.add("state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
-        }
-        if (error != null) {
-            params.add("error=" + URLEncoder.encode(error, StandardCharsets.UTF_8));
-        }
-        if (errorDescription != null) {
-            params.add("error_description=" + URLEncoder.encode(errorDescription, StandardCharsets.UTF_8));
-        }
-
-        if (!params.isEmpty()) {
-            callbackUrl.append("?").append(String.join("&", params));
-        }
-
-        // Redirect to frontend callback page
-        return "redirect:" + callbackUrl.toString();
-    }
-
+    // Helper method to determine base URL
     private String getBaseUrl(HttpServletRequest request) {
         String scheme = request.getScheme();
         String serverName = request.getServerName();
@@ -390,15 +465,19 @@ public class GitHubController {
         String forwardedProto = request.getHeader("X-Forwarded-Proto");
 
         if (forwardedHost != null && forwardedProto != null) {
-            // ngrok is forwarding the request - use the ngrok frontend URL
+            // ngrok is forwarding the request - use the ngrok frontend URL from config
             return "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app";
         }
 
-        // For development, typically frontend runs on port 8080 while backend on 3000
+        // For development, frontend typically runs on different port
         if ("localhost".equals(serverName) || "127.0.0.1".equals(serverName)) {
-            return "http://localhost:8080"; // Frontend port
+            // Check if we're running in development mode
+            if (serverPort == 3000) {
+                return "http://localhost:8080"; // Frontend development port
+            }
         }
 
+        // Production or other environments
         StringBuilder url = new StringBuilder();
         url.append(scheme).append("://").append(serverName);
 
@@ -408,7 +487,6 @@ public class GitHubController {
 
         return url.toString();
     }
-
 
     // Error handling
 

@@ -1,4 +1,4 @@
-// Updated GitHubConnectModal.tsx with ngrok support and improved error handling
+// Updated GitHubConnectModal.tsx with development reset functionality
 import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
@@ -13,6 +13,8 @@ import {
   Loader2,
   AlertTriangle,
   RefreshCw,
+  Trash2,
+  Settings,
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import {
@@ -21,6 +23,7 @@ import {
   useSearchGitHubRepositories,
   useCreateGitHubConnection,
 } from "../../hooks/useGithub";
+import { api } from "../../config/api";
 import type { GitHubRepository } from "../../services/githubService";
 
 interface GitHubConnectModalProps {
@@ -29,6 +32,158 @@ interface GitHubConnectModalProps {
   projectId: number;
   projectName: string;
 }
+
+// Development Reset Component
+const DevGitHubReset: React.FC<{ projectId: number }> = ({ projectId }) => {
+  const [isResetting, setIsResetting] = useState(false);
+  const [isClearingConnections, setIsClearingConnections] = useState(false);
+
+  const handleResetOAuth = async () => {
+    if (
+      !window.confirm(
+        "This will reset OAuth state for testing. You'll need to revoke authorization on GitHub too. Continue?"
+      )
+    ) {
+      return;
+    }
+
+    setIsResetting(true);
+    try {
+      const response = await api.post(
+        `/github/oauth/reset?projectId=${projectId}`
+      );
+
+      if (response.data.success) {
+        const data = response.data.data;
+        alert(
+          `OAuth state reset!\n\nNext steps:\n1. ✅ Local state cleared\n2. Go to: ${data.githubUrl}\n3. Find your DevFlow app and click "Revoke"\n4. Try OAuth again`
+        );
+      }
+    } catch (error: any) {
+      console.error("Failed to reset OAuth:", error);
+      const message =
+        error.response?.data?.message || "Failed to reset OAuth state";
+      alert(`Error: ${message}`);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleClearConnections = async () => {
+    if (
+      !window.confirm(
+        "This will delete ALL GitHub connections for this project. Continue?"
+      )
+    ) {
+      return;
+    }
+
+    setIsClearingConnections(true);
+    try {
+      const response = await api.delete(
+        `/github/dev/projects/${projectId}/connections/clear`
+      );
+
+      if (response.data.success) {
+        const data = response.data.data;
+        alert(
+          `Cleared ${data.deletedConnections} GitHub connections for project ${projectId}`
+        );
+        // Refresh the page or trigger a refetch
+        window.location.reload();
+      }
+    } catch (error: any) {
+      console.error("Failed to clear connections:", error);
+      const message =
+        error.response?.data?.message || "Failed to clear connections";
+      alert(`Error: ${message}`);
+    } finally {
+      setIsClearingConnections(false);
+    }
+  };
+
+  const openGitHubAuthorizations = () => {
+    window.open("https://github.com/settings/applications", "_blank");
+  };
+
+  // Only show in development
+  if (process.env.NODE_ENV !== "development") {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <div className="flex items-center space-x-2 mb-3">
+        <Settings className="w-4 h-4 text-yellow-600" />
+        <h4 className="text-sm font-medium text-yellow-800">
+          Development Testing Tools
+        </h4>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 mb-3">
+        <button
+          onClick={handleResetOAuth}
+          disabled={isResetting}
+          className="flex items-center justify-center space-x-2 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-2 rounded transition-colors disabled:opacity-50"
+        >
+          {isResetting ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Resetting OAuth...</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw className="w-3 h-3" />
+              <span>Reset OAuth State</span>
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={handleClearConnections}
+          disabled={isClearingConnections}
+          className="flex items-center justify-center space-x-2 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-3 py-2 rounded transition-colors disabled:opacity-50"
+        >
+          {isClearingConnections ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Clearing Connections...</span>
+            </>
+          ) : (
+            <>
+              <Trash2 className="w-3 h-3" />
+              <span>Clear All Connections</span>
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={openGitHubAuthorizations}
+          className="flex items-center justify-center space-x-2 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-3 py-2 rounded transition-colors"
+        >
+          <Github className="w-3 h-3" />
+          <span>GitHub Authorizations</span>
+          <ExternalLink className="w-3 h-3" />
+        </button>
+      </div>
+
+      <div className="text-xs text-yellow-700 space-y-1">
+        <p>
+          <strong>Reset OAuth:</strong> Clears local state + guides you to
+          revoke on GitHub
+        </p>
+        <p>
+          <strong>Clear Connections:</strong> Removes all GitHub repo
+          connections for this project
+        </p>
+        <p>
+          <strong>GitHub Authorizations:</strong> Direct link to manage your
+          OAuth apps
+        </p>
+      </div>
+    </div>
+  );
+};
 
 export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   isOpen,
@@ -375,6 +530,9 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Development Reset Tools */}
+          <DevGitHubReset projectId={projectId} />
 
           {/* Step 1: OAuth */}
           {step === "oauth" && (
