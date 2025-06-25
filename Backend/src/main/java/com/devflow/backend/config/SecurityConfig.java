@@ -34,7 +34,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
 
-    @Value("${APP_BASE_URL}")
+    @Value("${APP_BASE_URL:https://dev-flow-production.up.railway.app}")
     private String baseUrl;
 
     @Bean
@@ -62,6 +62,13 @@ public class SecurityConfig {
                         // Public user validation endpoints
                         .requestMatchers("/api/v1/users/check-email").permitAll()
 
+                        // GitHub OAuth callback (public for OAuth flow)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/github/oauth/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/github/oauth/callback").permitAll()
+
+                        // GitHub webhook (public for GitHub to call)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/github/webhook").permitAll()
+
                         // File attachment endpoints (require authentication)
                         .requestMatchers("/api/v1/attachments/**").authenticated()
 
@@ -70,6 +77,7 @@ public class SecurityConfig {
 
                         // File download endpoints (require authentication for security)
                         .requestMatchers(HttpMethod.GET, "/api/v1/attachments/*/download").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/attachments/*/stream").authenticated()
 
                         // Task endpoints (for attachment context)
                         .requestMatchers("/api/v1/tasks/**").authenticated()
@@ -85,6 +93,9 @@ public class SecurityConfig {
 
                         // User endpoints
                         .requestMatchers("/api/v1/users/**").authenticated()
+
+                        // GitHub integration endpoints
+                        .requestMatchers("/api/v1/github/**").authenticated()
 
                         // Admin endpoints (for file validation/management)
                         .requestMatchers("/api/v1/attachments/admin/**").hasRole("ADMIN")
@@ -105,55 +116,47 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Allow specific origins (update for production)
-        configuration.setAllowedOriginPatterns(List.of(
-                "http://localhost:3000",
-                "http://localhost:3001",
-                "http://localhost:5173",
-                "http://localhost:8080",
-                "https://devflow-*.vercel.app",
-                "https://your-production-domain.com",
-                "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app",
+        // ✅ SECURE: Explicit allowed origins only
+        configuration.setAllowedOrigins(List.of(
+                // Development origins
+                "http://localhost:8080",           // Your current frontend
+                "http://localhost:3000",           // Common React dev port
+                "http://localhost:3001",           // Alternative dev port
+                "http://localhost:5173",           // Vite dev port
+
+                // Backend URL (for internal calls)
                 baseUrl
         ));
 
-        // Allow specific HTTP methods including file upload
+        // Allow standard HTTP methods
         configuration.setAllowedMethods(List.of(
                 "GET",
                 "POST",
                 "PUT",
                 "DELETE",
                 "OPTIONS",
-                "PATCH"
+                "PATCH",
+                "HEAD"
         ));
 
-
+        // Allow standard headers
         configuration.setAllowedHeaders(List.of(
-                "*",
-                "Authorization",
-                "Content-Type",
-                "Content-Disposition",
-                "Content-Length",
-                "X-Requested-With",
-                "Accept",
-                "Origin",
-                "Access-Control-Request-Method",
-                "Access-Control-Request-Headers",
-                "Sec-WebSocket-Protocol",
-                "Sec-WebSocket-Version",
-                "Sec-WebSocket-Key",
-                "Sec-WebSocket-Extensions"
+                "*"  // Allow all headers for simplicity
         ));
 
-
+        // Expose headers that frontend might need
         configuration.setExposedHeaders(List.of(
                 "Authorization",
                 "Content-Disposition",
                 "Content-Type",
-                "Content-Length"
+                "Content-Length",
+                "X-Total-Count"  // For pagination
         ));
 
+        // Allow credentials (required for JWT in headers)
         configuration.setAllowCredentials(true);
+
+        // Cache preflight requests for 1 hour
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
