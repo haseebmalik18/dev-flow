@@ -1,3 +1,4 @@
+// 1. Fix GitHubConnectModal.tsx - Add projectId validation
 import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
@@ -53,6 +54,18 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     error: searchError,
   } = useSearchGitHubRepositories(accessToken, searchQuery, 1, 50);
 
+  // CRITICAL FIX: Validate projectId and close modal if invalid
+  useEffect(() => {
+    if (isOpen && (!projectId || isNaN(projectId) || projectId <= 0)) {
+      console.error(
+        "GitHubConnectModal: Invalid projectId provided:",
+        projectId
+      );
+      alert("Invalid project selected. Please refresh the page and try again.");
+      onClose();
+    }
+  }, [isOpen, projectId, onClose]);
+
   // Handle OAuth callback from popup window
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -85,6 +98,14 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   }, [gitHubCallbackMutation]);
 
   const handleStartOAuth = useCallback(() => {
+    // CRITICAL FIX: Validate projectId before making request
+    if (!projectId || isNaN(projectId) || projectId <= 0) {
+      console.error("Cannot start OAuth: invalid projectId", projectId);
+      alert("Invalid project ID. Please refresh the page and try again.");
+      return;
+    }
+
+    console.log("Starting OAuth for projectId:", projectId);
     gitHubOAuthMutation.mutate(projectId);
   }, [gitHubOAuthMutation, projectId]);
 
@@ -95,6 +116,13 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
   const handleConnectRepository = useCallback(() => {
     if (!selectedRepo) return;
+
+    // CRITICAL FIX: Validate projectId before creating connection
+    if (!projectId || isNaN(projectId) || projectId <= 0) {
+      console.error("Cannot connect repository: invalid projectId", projectId);
+      alert("Invalid project ID. Please refresh the page and try again.");
+      return;
+    }
 
     createConnectionMutation.mutate(
       {
@@ -139,7 +167,10 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     });
   };
 
-  if (!isOpen) return null;
+  // CRITICAL FIX: Don't render if projectId is invalid
+  if (!isOpen || !projectId || isNaN(projectId) || projectId <= 0) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-gray-900/60 flex items-center justify-center p-4 z-50">
@@ -189,6 +220,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 loading={gitHubOAuthMutation.isPending}
                 icon={<Github className="w-5 h-5" />}
                 className="bg-gray-900 hover:bg-gray-800"
+                disabled={!projectId || isNaN(projectId) || projectId <= 0}
               >
                 Authorize GitHub Access
               </Button>

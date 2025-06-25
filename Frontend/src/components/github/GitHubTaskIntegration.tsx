@@ -1,4 +1,4 @@
-// Enhanced GitHubTaskIntegration.tsx with connection capability
+// Fixed GitHubTaskIntegration.tsx
 
 import React, { useState, useCallback } from "react";
 import {
@@ -30,7 +30,7 @@ import type {
   GitHubCommit,
   GitHubPullRequest,
   CreateTaskLinkRequest,
-} from "../..//services/githubService";
+} from "../../services/githubService";
 
 interface GitHubTaskIntegrationProps {
   taskId: number;
@@ -52,21 +52,41 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
   const [isLinkingPR, setIsLinkingPR] = useState<number | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-  // Check if project has GitHub connections
-  const { data: connections, isLoading: isLoadingConnections } =
-    useProjectGitHubConnections(projectId);
+  // CRITICAL FIX: Log values for debugging
+  console.log("GitHubTaskIntegration props:", {
+    taskId,
+    taskTitle,
+    projectId,
+    projectName,
+    taskIdType: typeof taskId,
+    projectIdType: typeof projectId,
+    taskIdValid: taskId && Number.isInteger(taskId) && taskId > 0,
+    projectIdValid: projectId && Number.isInteger(projectId) && projectId > 0,
+  });
+
+  // CRITICAL FIX: Validate both taskId and projectId
+  const isValidTask = taskId && Number.isInteger(taskId) && taskId > 0;
+  const isValidProject =
+    projectId && Number.isInteger(projectId) && projectId > 0;
+
+  // Check if project has GitHub connections - only if projectId is valid
+  const {
+    data: connections,
+    isLoading: isLoadingConnections,
+    error: connectionsError,
+  } = useProjectGitHubConnections(isValidProject ? projectId : 0);
 
   const {
     data: commits,
     isLoading: isLoadingCommits,
     error: commitsError,
-  } = useTaskGitHubCommits(taskId);
+  } = useTaskGitHubCommits(isValidTask ? taskId : 0);
 
   const {
     data: pullRequests,
     isLoading: isLoadingPRs,
     error: prsError,
-  } = useTaskGitHubPullRequests(taskId);
+  } = useTaskGitHubPullRequests(isValidTask ? taskId : 0);
 
   const createCommitLinkMutation = useCreateCommitTaskLink();
   const createPRLinkMutation = useCreatePRTaskLink();
@@ -115,6 +135,11 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
       commitId: number,
       linkType: "REFERENCE" | "CLOSES" | "FIXES" | "RESOLVES"
     ) => {
+      if (!isValidTask) {
+        console.error("Cannot create commit link: invalid taskId", taskId);
+        return;
+      }
+
       const linkData: CreateTaskLinkRequest = {
         taskId,
         linkType,
@@ -130,11 +155,16 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
         }
       );
     },
-    [taskId, taskTitle, createCommitLinkMutation]
+    [taskId, taskTitle, createCommitLinkMutation, isValidTask]
   );
 
   const handleCreatePRLink = useCallback(
     (prId: number, linkType: "REFERENCE" | "CLOSES" | "FIXES" | "RESOLVES") => {
+      if (!isValidTask) {
+        console.error("Cannot create PR link: invalid taskId", taskId);
+        return;
+      }
+
       const linkData: CreateTaskLinkRequest = {
         taskId,
         linkType,
@@ -151,23 +181,116 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
         }
       );
     },
-    [taskId, taskTitle, createPRLinkMutation]
+    [taskId, taskTitle, createPRLinkMutation, isValidTask]
   );
 
-  // If no connections exist, show connection prompt
-  if (isLoadingConnections) {
+  // CRITICAL FIX: Show error if invalid IDs
+  if (!isValidTask || !isValidProject) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-600">
-            Checking GitHub connections...
-          </span>
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+              <Github className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">
+                GitHub Integration
+              </h3>
+              <p className="text-sm text-gray-600">
+                GitHub integration for this task
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="text-center py-8">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Invalid Task or Project
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Task ID: {taskId} (valid: {isValidTask ? "yes" : "no"})<br />
+              Project ID: {projectId} (valid: {isValidProject ? "yes" : "no"})
+            </p>
+            <p className="text-gray-600">
+              Please refresh the page and try again.
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
+  // If checking connections and there's an error
+  if (connectionsError) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+              <Github className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">
+                GitHub Integration
+              </h3>
+              <p className="text-sm text-gray-600">
+                Error loading GitHub connections
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="text-center py-8">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Connection Error
+            </h3>
+            <p className="text-gray-600">
+              Failed to load GitHub connections for this project.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If loading connections
+  if (isLoadingConnections) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+              <Github className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">
+                GitHub Integration
+              </h3>
+              <p className="text-sm text-gray-600">
+                Checking GitHub connections...
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600">
+              Loading GitHub connections...
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If no connections exist, show connection prompt
   if (!hasConnections) {
     return (
       <>
