@@ -1,6 +1,6 @@
 export const websocketConfig = {
   development: {
-    url: "ws://localhost:3000/ws",
+    url: "ws://localhost:8080/ws",
     reconnectDelay: 1000,
     maxReconnectAttempts: 5,
     heartbeatIncoming: 4000,
