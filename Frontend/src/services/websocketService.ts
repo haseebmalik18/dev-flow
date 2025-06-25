@@ -1,5 +1,10 @@
 import { Client, StompConfig, type Message } from "@stomp/stompjs";
 import { useAuthStore } from "../hooks/useAuthStore";
+import {
+  getWebSocketUrl,
+  getWebSocketHeaders,
+  logWebSocketConfig,
+} from "../config/websocket";
 
 export interface ActivityUpdate {
   id?: number;
@@ -301,8 +306,9 @@ class EnhancedWebSocketService {
 
       this.isGlobalSubscribed = true;
       this.globalSubscriptionId = subscription.id;
+      console.log("✅ Subscribed to global activities");
     } catch (error) {
-      // Silent fail
+      console.error("❌ Failed to subscribe to global activities:", error);
     }
   }
 
@@ -340,8 +346,12 @@ class EnhancedWebSocketService {
       });
 
       subscription.subscriptionId = clientSubscription.id;
+      console.log(`✅ Subscribed to project ${projectId} activities`);
     } catch (error) {
-      // Silent fail
+      console.error(
+        `❌ Failed to subscribe to project ${projectId} activities:`,
+        error
+      );
     }
   }
 
@@ -360,8 +370,9 @@ class EnhancedWebSocketService {
 
       this.isGlobalSubscribed = false;
       this.globalSubscriptionId = null;
+      console.log("🔌 Unsubscribed from global activities");
     } catch (error) {
-      // Silent fail
+      console.error("❌ Failed to unsubscribe from global activities:", error);
     }
   }
 
@@ -378,17 +389,22 @@ class EnhancedWebSocketService {
           headers: this.getAuthHeaders(),
         });
       }
+      console.log(`🔌 Unsubscribed from project ${projectId} activities`);
     } catch (error) {
-      // Silent fail
+      console.error(
+        `❌ Failed to unsubscribe from project ${projectId} activities:`,
+        error
+      );
     }
   }
 
   private handleGlobalActivityMessage(message: Message): void {
     try {
       const activity: ActivityUpdate = JSON.parse(message.body);
+      console.log("📩 Received global activity:", activity);
       this.processActivityMessage(activity, this.globalActivityCallbacks);
     } catch (error) {
-      // Silent fail
+      console.error("❌ Failed to process global activity message:", error);
     }
   }
 
@@ -398,6 +414,7 @@ class EnhancedWebSocketService {
   ): void {
     try {
       const activity: ActivityUpdate = JSON.parse(message.body);
+      console.log(`📩 Received project ${projectId} activity:`, activity);
 
       this.addProjectActivity(projectId, activity);
 
@@ -406,7 +423,10 @@ class EnhancedWebSocketService {
         this.processActivityMessage(activity, subscription.callbacks);
       }
     } catch (error) {
-      // Silent fail
+      console.error(
+        `❌ Failed to process project ${projectId} activity message:`,
+        error
+      );
     }
   }
 
@@ -435,7 +455,7 @@ class EnhancedWebSocketService {
           try {
             callback(activity);
           } catch (error) {
-            // Silent fail
+            console.error("❌ Callback error:", error);
           }
         });
       });
@@ -444,7 +464,7 @@ class EnhancedWebSocketService {
         try {
           callback(activity);
         } catch (error) {
-          // Silent fail
+          console.error("❌ Callback error:", error);
         }
       });
     }
@@ -470,7 +490,7 @@ class EnhancedWebSocketService {
           try {
             callback(activity);
           } catch (error) {
-            // Silent fail
+            console.error("❌ Queued callback error:", error);
           }
         });
 
@@ -487,7 +507,7 @@ class EnhancedWebSocketService {
               try {
                 callback(activity);
               } catch (error) {
-                // Silent fail
+                console.error("❌ Queued project callback error:", error);
               }
             });
           }
@@ -531,8 +551,9 @@ class EnhancedWebSocketService {
         });
 
         this.setLastHeartbeatTime(now);
+        console.log("💓 Heartbeat sent");
       } catch (error) {
-        // Silent fail
+        console.error("❌ Heartbeat failed:", error);
       }
     }
   }
@@ -548,7 +569,7 @@ class EnhancedWebSocketService {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       }
     } catch (error) {
-      // Silent fail
+      console.error("❌ Failed to clear project activities:", error);
     }
   }
 
@@ -562,12 +583,13 @@ class EnhancedWebSocketService {
       this.client.deactivate();
     }
 
-    const wsUrl =
-      process.env.NODE_ENV === "development"
-        ? "ws://localhost:3000/ws"
-        : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
-            window.location.host
-          }/ws`;
+    // Log configuration for debugging
+    logWebSocketConfig();
+
+    // Use the proper WebSocket URL from your config
+    const wsUrl = getWebSocketUrl();
+
+    console.log("🚀 Setting up WebSocket client with URL:", wsUrl);
 
     const stompConfig: StompConfig = {
       brokerURL: wsUrl,
@@ -575,25 +597,33 @@ class EnhancedWebSocketService {
       reconnectDelay: 2000,
       heartbeatIncoming: 30000,
       heartbeatOutgoing: 30000,
+      debug: (str) => {
+        console.log("STOMP Debug:", str);
+      },
       onConnect: (frame) => {
+        console.log("✅ WebSocket connected successfully:", frame);
         this.reconnectAttempts = 0;
         this.setConnectionState("connected");
         this.resubscribeAll();
       },
       onDisconnect: (frame) => {
+        console.log("🔌 WebSocket disconnected:", frame);
         this.resetSubscriptions();
         this.setConnectionState("disconnected");
         this.scheduleReconnect();
       },
       onStompError: (frame) => {
+        console.error("❌ STOMP Error:", frame);
         this.setConnectionState("error");
         this.scheduleReconnect();
       },
       onWebSocketError: (error) => {
+        console.error("❌ WebSocket Error:", error);
         this.setConnectionState("error");
         this.scheduleReconnect();
       },
       onWebSocketClose: (event) => {
+        console.log("🔌 WebSocket connection closed:", event);
         this.setConnectionState("disconnected");
         this.scheduleReconnect();
       },
@@ -666,19 +696,13 @@ class EnhancedWebSocketService {
   private getAuthHeaders(): Record<string, string> {
     const authState = useAuthStore.getState();
     const token = authState.token;
-    const headers: Record<string, string> = {};
-
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-      headers["token"] = token;
-    }
-
-    return headers;
+    return getWebSocketHeaders(token || undefined);
   }
 
   private setConnectionState(state: ConnectionState): void {
     if (this.connectionState !== state) {
       this.connectionState = state;
+      console.log(`🔄 Connection state changed to: ${state}`);
       this.notifyConnectionStatus(state);
     }
   }
@@ -688,6 +712,9 @@ class EnhancedWebSocketService {
       !this.shouldBeConnected() ||
       this.reconnectAttempts >= this.maxReconnectAttempts
     ) {
+      console.log(
+        "🛑 Not scheduling reconnect - max attempts reached or should not be connected"
+      );
       return;
     }
 
@@ -696,9 +723,17 @@ class EnhancedWebSocketService {
     }
 
     const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 30000);
+    console.log(
+      `🔄 Scheduling reconnect attempt ${
+        this.reconnectAttempts + 1
+      } in ${delay}ms`
+    );
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempts++;
+      console.log(
+        `🔄 Attempting reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
+      );
       this.connect();
     }, delay);
   }
@@ -708,7 +743,7 @@ class EnhancedWebSocketService {
       try {
         callback(state);
       } catch (error) {
-        // Silent fail
+        console.error("❌ Connection status callback error:", error);
       }
     });
   }
@@ -719,6 +754,7 @@ class EnhancedWebSocketService {
 
   public connect(): void {
     if (!this.shouldBeConnected()) {
+      console.log("🛑 Should not be connected - skipping connect");
       return;
     }
 
@@ -726,9 +762,11 @@ class EnhancedWebSocketService {
       this.connectionState === "connected" ||
       this.connectionState === "connecting"
     ) {
+      console.log("🔄 Already connected or connecting - skipping");
       return;
     }
 
+    console.log("🚀 Initiating WebSocket connection...");
     this.setConnectionState("connecting");
     this.setupClient();
 
@@ -738,6 +776,8 @@ class EnhancedWebSocketService {
   }
 
   public disconnect(): void {
+    console.log("🔌 Disconnecting WebSocket...");
+
     [
       this.reconnectTimeout,
       this.heartbeatInterval,
@@ -768,6 +808,7 @@ class EnhancedWebSocketService {
   }
 
   public forceReconnect(): void {
+    console.log("🔄 Force reconnecting WebSocket...");
     this.disconnect();
     setTimeout(() => {
       this.connect();
@@ -827,6 +868,7 @@ class EnhancedWebSocketService {
       lastHeartbeat: this.lastHeartbeatTime
         ? new Date(this.lastHeartbeatTime).toISOString()
         : "never",
+      wsUrl: getWebSocketUrl(),
     };
   }
 }

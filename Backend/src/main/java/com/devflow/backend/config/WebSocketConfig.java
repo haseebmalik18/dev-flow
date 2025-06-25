@@ -59,7 +59,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://localhost:5173",
                         "http://localhost:8080",
                         "https://devflow-*.vercel.app",
-                        "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app",
+                        "https://f9cd-2600-4808-5392-d600-c169-c8bd-9682-5e51.ngrok-free.app",
                         baseUrl
                 );
     }
