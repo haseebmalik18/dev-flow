@@ -18,12 +18,13 @@ import {
   MoreHorizontal,
   Hash,
   Loader2,
+  Github,
 } from "lucide-react";
 import { DashboardHeader } from "../../components/dashboard/DashboardHeader";
 import { Button } from "../../components/ui/Button";
 import { TaskFormModal } from "../../components/projects/TaskFormModal";
 import { CommentSection } from "../../components/tasks/CommentSection";
-
+import { GitHubTaskIntegration } from "../../components/github/GitHubTaskIntegration";
 import { DependencySection } from "../../components/tasks/DependencySection";
 import { SubtaskSection } from "../../components/tasks/SubtaskSection";
 import {
@@ -46,7 +47,7 @@ export const TaskDetailPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "comments" | "subtasks" | "activity"
+    "overview" | "comments" | "subtasks" | "github" | "activity"
   >("overview");
   const [showActions, setShowActions] = useState(false);
 
@@ -483,6 +484,7 @@ export const TaskDetailPage: React.FC = () => {
                   icon: CheckCircle,
                   count: subtasks?.length,
                 },
+                { id: "github", label: "GitHub", icon: Github },
                 { id: "activity", label: "Activity", icon: Clock },
               ].map((tab) => (
                 <button
@@ -543,6 +545,15 @@ export const TaskDetailPage: React.FC = () => {
                   taskId={task.id}
                   projectId={task.project.id}
                   projectMembers={projectMembers}
+                />
+              )}
+
+              {activeTab === "github" && (
+                <GitHubTaskIntegration
+                  taskId={task.id}
+                  taskTitle={task.title}
+                  projectId={task.project.id}
+                  projectName={task.project.name}
                 />
               )}
 

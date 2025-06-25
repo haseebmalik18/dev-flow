@@ -25,9 +25,13 @@ import {
   Activity,
   Link as LinkIcon,
   Paperclip,
+  Github,
+  GitCommit,
+  GitPullRequest,
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { UnifiedActivityFeed } from "../tasks/UnifiedActivityFeed";
+import { GitHubTaskIntegration } from "../github/GitHubTaskIntegration";
 import {
   useUpdateTask,
   useDeleteTask,
@@ -154,6 +158,9 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
     const [showAssigneeSearch, setShowAssigneeSearch] = useState(false);
     const [assigneeSearchTerm, setAssigneeSearchTerm] = useState("");
     const [optimisticSubtasks, setOptimisticSubtasks] = useState<any[]>([]);
+    const [activeTab, setActiveTab] = useState<
+      "overview" | "activity" | "github"
+    >("overview");
 
     const taskId = useMemo(() => task?.id || 0, [task?.id]);
 
@@ -387,6 +394,7 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
         setShowQuickActions(false);
         setShowAssigneeSearch(false);
         setAssigneeSearchTerm("");
+        setActiveTab("overview");
       }
     }, [isOpen]);
 
@@ -398,9 +406,10 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
         onClick={handleBackdropClick}
       >
         <div
-          className="bg-white rounded-xl max-w-4xl w-full max-h-[92vh] overflow-hidden shadow-2xl flex flex-col border border-gray-100"
+          className="bg-white rounded-xl max-w-5xl w-full max-h-[92vh] overflow-hidden shadow-2xl flex flex-col border border-gray-100"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Header */}
           <div className="flex items-start justify-between p-6 border-b border-gray-200">
             <div className="flex items-start space-x-3 flex-1 min-w-0">
               <div
@@ -454,317 +463,367 @@ export const TaskCardModal: React.FC<TaskCardModalProps> = memo(
             </div>
           </div>
 
+          {/* Tabs */}
+          <div className="border-b border-gray-200 px-6">
+            <nav className="flex space-x-8">
+              {[
+                { id: "overview", label: "Overview", icon: Eye },
+                { id: "activity", label: "Activity", icon: MessageCircle },
+                { id: "github", label: "GitHub", icon: Github },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex items-center space-x-2 py-3 border-b-2 font-medium text-sm transition-colors ${
+                    activeTab === tab.id
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Content */}
           <div className="flex-1 overflow-y-auto">
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div className="lg:col-span-3 space-y-6">
-                  <div>
-                    <h3 className="text-base font-medium text-gray-900 mb-3 flex items-center">
-                      <Eye className="w-4 h-4 mr-2" />
-                      Description
-                    </h3>
-                    <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded">
-                      {task.description || "No description provided."}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-base font-medium text-gray-900 flex items-center">
-                        <CheckSquare className="w-4 h-4 mr-2" />
-                        Checklist
-                        {optimisticSubtasks &&
-                          optimisticSubtasks.length > 0 && (
-                            <span className="ml-2 text-xs text-gray-500">
-                              {subtaskStats.completed}/{subtaskStats.total}
-                            </span>
-                          )}
+            <div className="p-6">
+              {activeTab === "overview" && (
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                  <div className="lg:col-span-3 space-y-6">
+                    {/* Description */}
+                    <div>
+                      <h3 className="text-base font-medium text-gray-900 mb-3 flex items-center">
+                        <Eye className="w-4 h-4 mr-2" />
+                        Description
                       </h3>
-                      <button
-                        onClick={() => onAddSubtask?.(task.id)}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
-                      >
-                        Add an item
-                      </button>
+                      <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded">
+                        {task.description || "No description provided."}
+                      </div>
                     </div>
 
-                    {optimisticSubtasks && optimisticSubtasks.length > 0 && (
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                          <span>
-                            {Math.round(subtaskStats.percentage)}% complete
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1">
-                          <div
-                            className="bg-green-500 h-1 rounded-full transition-all duration-300"
-                            style={{ width: `${subtaskStats.percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {optimisticSubtasks && optimisticSubtasks.length > 0 ? (
-                      <div className="space-y-1">
-                        {optimisticSubtasks.map((subtask) => (
-                          <SubtaskItem
-                            key={subtask.id}
-                            subtask={subtask}
-                            onToggle={handleSubtaskToggle}
-                            formatDate={formatDate}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 text-gray-500">
-                        <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No checklist items yet</p>
+                    {/* Checklist */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-base font-medium text-gray-900 flex items-center">
+                          <CheckSquare className="w-4 h-4 mr-2" />
+                          Checklist
+                          {optimisticSubtasks &&
+                            optimisticSubtasks.length > 0 && (
+                              <span className="ml-2 text-xs text-gray-500">
+                                {subtaskStats.completed}/{subtaskStats.total}
+                              </span>
+                            )}
+                        </h3>
                         <button
                           onClick={() => onAddSubtask?.(task.id)}
-                          className="text-xs text-blue-600 hover:text-blue-700 mt-1 cursor-pointer"
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
                         >
-                          Add your first item
+                          Add an item
                         </button>
                       </div>
-                    )}
+
+                      {optimisticSubtasks && optimisticSubtasks.length > 0 && (
+                        <div className="mb-3">
+                          <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                            <span>
+                              {Math.round(subtaskStats.percentage)}% complete
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1">
+                            <div
+                              className="bg-green-500 h-1 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${subtaskStats.percentage}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {optimisticSubtasks && optimisticSubtasks.length > 0 ? (
+                        <div className="space-y-1">
+                          {optimisticSubtasks.map((subtask) => (
+                            <SubtaskItem
+                              key={subtask.id}
+                              subtask={subtask}
+                              onToggle={handleSubtaskToggle}
+                              formatDate={formatDate}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No checklist items yet</p>
+                          <button
+                            onClick={() => onAddSubtask?.(task.id)}
+                            className="text-xs text-blue-600 hover:text-blue-700 mt-1 cursor-pointer"
+                          >
+                            Add your first item
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <UnifiedActivityFeed taskId={task.id} />
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
-                      Actions
-                    </h3>
-                    <div className="space-y-2">
-                      <button
-                        onClick={() => onEdit?.(task.id)}
-                        className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
-                      >
-                        <Edit className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-
-                      <div className="relative">
+                  {/* Sidebar */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
+                        Actions
+                      </h3>
+                      <div className="space-y-2">
                         <button
-                          onClick={() => setShowQuickActions(!showQuickActions)}
+                          onClick={() => onEdit?.(task.id)}
                           className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
                         >
-                          <MoreHorizontal className="w-3 h-3" />
-                          <span>Change Status</span>
+                          <Edit className="w-3 h-3" />
+                          <span>Edit</span>
                         </button>
 
-                        {showQuickActions && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-10">
-                            <div className="p-1">
-                              {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map(
-                                (status) => (
-                                  <button
-                                    key={status}
-                                    onClick={() => handleStatusChange(status)}
-                                    className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded flex items-center space-x-2"
-                                  >
-                                    <StatusIcon status={status} />
-                                    <span>{status.replace("_", " ")}</span>
-                                  </button>
-                                )
+                        <div className="relative">
+                          <button
+                            onClick={() =>
+                              setShowQuickActions(!showQuickActions)
+                            }
+                            className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            <MoreHorizontal className="w-3 h-3" />
+                            <span>Change Status</span>
+                          </button>
+
+                          {showQuickActions && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-10">
+                              <div className="p-1">
+                                {["TODO", "IN_PROGRESS", "REVIEW", "DONE"].map(
+                                  (status) => (
+                                    <button
+                                      key={status}
+                                      onClick={() => handleStatusChange(status)}
+                                      className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded flex items-center space-x-2"
+                                    >
+                                      <StatusIcon status={status} />
+                                      <span>{status.replace("_", " ")}</span>
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={handleDelete}
+                          className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Assignee */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
+                        Assignee
+                      </h3>
+                      <div className="relative">
+                        {task.assignee ? (
+                          <div
+                            className="flex items-center space-x-2 p-3 hover:bg-gray-50 rounded cursor-pointer"
+                            onClick={() => setShowAssigneeSearch(true)}
+                          >
+                            {task.assignee.avatar ? (
+                              <img
+                                src={task.assignee.avatar}
+                                alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
+                                className="w-8 h-8 rounded-full"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                {task.assignee.firstName[0]}
+                                {task.assignee.lastName[0]}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {task.assignee.firstName}{" "}
+                                {task.assignee.lastName}
+                              </div>
+                              {task.assignee.jobTitle && (
+                                <div className="text-sm text-gray-500 truncate">
+                                  {task.assignee.jobTitle}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className="flex items-center space-x-2 text-gray-500 p-3 hover:bg-gray-50 rounded cursor-pointer"
+                            onClick={() => setShowAssigneeSearch(true)}
+                          >
+                            <User className="w-8 h-8 p-2 bg-gray-100 rounded-full" />
+                            <span className="text-sm">Click to assign</span>
+                          </div>
+                        )}
+
+                        {showAssigneeSearch && (
+                          <div className="assignee-dropdown absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                            <div className="p-2">
+                              <input
+                                type="text"
+                                placeholder="Search members..."
+                                onChange={(e) =>
+                                  setAssigneeSearchTerm(e.target.value)
+                                }
+                                className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="max-h-32 overflow-y-auto">
+                              <button
+                                onClick={() => {
+                                  handleAssigneeChange(null);
+                                  setShowAssigneeSearch(false);
+                                  setAssigneeSearchTerm("");
+                                }}
+                                className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                <User className="w-6 h-6 p-1 bg-gray-100 rounded-full" />
+                                <span>Unassigned</span>
+                              </button>
+
+                              {filteredMembers.map((member) => (
+                                <button
+                                  key={member.id}
+                                  onClick={() => {
+                                    handleAssigneeChange(member.user.id);
+                                    setShowAssigneeSearch(false);
+                                    setAssigneeSearchTerm("");
+                                  }}
+                                  className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
+                                    task.assignee?.id === member.user.id
+                                      ? "bg-blue-50 text-blue-700"
+                                      : "text-gray-700"
+                                  }`}
+                                >
+                                  {member.user.avatar ? (
+                                    <img
+                                      src={member.user.avatar}
+                                      alt={`${member.user.firstName} ${member.user.lastName}`}
+                                      className="w-6 h-6 rounded-full"
+                                    />
+                                  ) : (
+                                    <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                      {member.user.firstName[0]}
+                                      {member.user.lastName[0]}
+                                    </div>
+                                  )}
+                                  <div className="text-left flex-1 min-w-0">
+                                    <div className="font-medium truncate">
+                                      {member.user.firstName}{" "}
+                                      {member.user.lastName}
+                                    </div>
+                                    <div className="text-sm text-gray-500 truncate">
+                                      {member.user.username}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+
+                              {filteredMembers.length === 0 && (
+                                <div className="px-3 py-2 text-sm text-gray-500">
+                                  No team members found
+                                </div>
                               )}
                             </div>
                           </div>
                         )}
                       </div>
-
-                      <button
-                        onClick={handleDelete}
-                        className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition-colors"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Delete</span>
-                      </button>
                     </div>
-                  </div>
 
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
-                      Assignee
-                    </h3>
-                    <div className="relative">
-                      {task.assignee ? (
-                        <div
-                          className="flex items-center space-x-2 p-3 hover:bg-gray-50 rounded cursor-pointer"
-                          onClick={() => setShowAssigneeSearch(true)}
-                        >
-                          {task.assignee.avatar ? (
-                            <img
-                              src={task.assignee.avatar}
-                              alt={`${task.assignee.firstName} ${task.assignee.lastName}`}
-                              className="w-8 h-8 rounded-full"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                              {task.assignee.firstName[0]}
-                              {task.assignee.lastName[0]}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900 truncate">
-                              {task.assignee.firstName} {task.assignee.lastName}
-                            </div>
-                            {task.assignee.jobTitle && (
-                              <div className="text-sm text-gray-500 truncate">
-                                {task.assignee.jobTitle}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          className="flex items-center space-x-2 text-gray-500 p-3 hover:bg-gray-50 rounded cursor-pointer"
-                          onClick={() => setShowAssigneeSearch(true)}
-                        >
-                          <User className="w-8 h-8 p-2 bg-gray-100 rounded-full" />
-                          <span className="text-sm">Click to assign</span>
-                        </div>
-                      )}
-
-                      {showAssigneeSearch && (
-                        <div className="assignee-dropdown absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                          <div className="p-2">
-                            <input
-                              type="text"
-                              placeholder="Search members..."
-                              onChange={(e) =>
-                                setAssigneeSearchTerm(e.target.value)
-                              }
-                              className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                              autoFocus
-                            />
-                          </div>
-                          <div className="max-h-32 overflow-y-auto">
-                            <button
-                              onClick={() => {
-                                handleAssigneeChange(null);
-                                setShowAssigneeSearch(false);
-                                setAssigneeSearchTerm("");
-                              }}
-                              className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                            >
-                              <User className="w-6 h-6 p-1 bg-gray-100 rounded-full" />
-                              <span>Unassigned</span>
-                            </button>
-
-                            {filteredMembers.map((member) => (
-                              <button
-                                key={member.id}
-                                onClick={() => {
-                                  handleAssigneeChange(member.user.id);
-                                  setShowAssigneeSearch(false);
-                                  setAssigneeSearchTerm("");
-                                }}
-                                className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-50 ${
-                                  task.assignee?.id === member.user.id
-                                    ? "bg-blue-50 text-blue-700"
-                                    : "text-gray-700"
-                                }`}
-                              >
-                                {member.user.avatar ? (
-                                  <img
-                                    src={member.user.avatar}
-                                    alt={`${member.user.firstName} ${member.user.lastName}`}
-                                    className="w-6 h-6 rounded-full"
-                                  />
-                                ) : (
-                                  <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                                    {member.user.firstName[0]}
-                                    {member.user.lastName[0]}
-                                  </div>
-                                )}
-                                <div className="text-left flex-1 min-w-0">
-                                  <div className="font-medium truncate">
-                                    {member.user.firstName}{" "}
-                                    {member.user.lastName}
-                                  </div>
-                                  <div className="text-sm text-gray-500 truncate">
-                                    {member.user.username}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-
-                            {filteredMembers.length === 0 && (
-                              <div className="px-3 py-2 text-sm text-gray-500">
-                                No team members found
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
-                      Due Date
-                    </h3>
-                    <div className="flex items-center space-x-2 px-3 py-2.5 bg-gray-50 rounded">
-                      <Calendar className="w-4 h-4 text-gray-400" />
-                      <span
-                        className={`text-sm ${
-                          task.isOverdue ? "text-red-600" : "text-gray-700"
-                        }`}
-                      >
-                        {formatDate(task.dueDate)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {attachments && attachments.length > 0 && (
+                    {/* Due Date */}
                     <div>
                       <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
-                        Attachments
+                        Due Date
                       </h3>
                       <div className="flex items-center space-x-2 px-3 py-2.5 bg-gray-50 rounded">
-                        <Paperclip className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-700">
-                          {attachments.length} file
-                          {attachments.length !== 1 ? "s" : ""}
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span
+                          className={`text-sm ${
+                            task.isOverdue ? "text-red-600" : "text-gray-700"
+                          }`}
+                        >
+                          {formatDate(task.dueDate)}
                         </span>
                       </div>
                     </div>
-                  )}
 
-                  {task.tagList && task.tagList.length > 0 && (
+                    {/* Attachments */}
+                    {attachments && attachments.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
+                          Attachments
+                        </h3>
+                        <div className="flex items-center space-x-2 px-3 py-2.5 bg-gray-50 rounded">
+                          <Paperclip className="w-4 h-4 text-gray-400" />
+                          <span className="text-sm text-gray-700">
+                            {attachments.length} file
+                            {attachments.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Labels */}
+                    {task.tagList && task.tagList.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
+                          Labels
+                        </h3>
+                        <div className="flex flex-wrap gap-1">
+                          {task.tagList.map((tag, index) => (
+                            <span
+                              key={index}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Created */}
                     <div>
                       <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
-                        Labels
+                        Created
                       </h3>
-                      <div className="flex flex-wrap gap-1">
-                        {task.tagList.map((tag, index) => (
-                          <span
-                            key={index}
-                            className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded"
-                          >
-                            {tag}
-                          </span>
-                        ))}
+                      <div className="text-sm text-gray-700 px-3 py-2.5 bg-gray-50 rounded">
+                        {formatTimeAgo(task.updatedAt)}
                       </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-2 uppercase tracking-wide">
-                      Created
-                    </h3>
-                    <div className="text-sm text-gray-700 px-3 py-2.5 bg-gray-50 rounded">
-                      {formatTimeAgo(task.updatedAt)}
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {activeTab === "activity" && (
+                <UnifiedActivityFeed taskId={task.id} />
+              )}
+
+              {activeTab === "github" && (
+                <GitHubTaskIntegration
+                  taskId={task.id}
+                  taskTitle={task.title}
+                />
+              )}
             </div>
           </div>
 
+          {/* Footer */}
           <div className="border-t border-gray-200 px-6 py-3">
             <div className="flex items-center justify-between text-xs text-gray-400">
               <span>Last updated {formatTimeAgo(task.updatedAt)}</span>

@@ -1,4 +1,5 @@
-// File: Frontend/src/components/github/GitHubTaskIntegration.tsx
+// Enhanced GitHubTaskIntegration.tsx with connection capability
+
 import React, { useState, useCallback } from "react";
 import {
   Github,
@@ -14,34 +15,46 @@ import {
   X,
   AlertTriangle,
   Loader2,
+  Settings,
 } from "lucide-react";
 import { Button } from "../ui/Button";
+import { GitHubConnectModal } from "../github/GitHubConnectModal";
 import {
   useTaskGitHubCommits,
   useTaskGitHubPullRequests,
   useCreateCommitTaskLink,
   useCreatePRTaskLink,
+  useProjectGitHubConnections,
 } from "../../hooks/useGithub";
 import type {
   GitHubCommit,
   GitHubPullRequest,
   CreateTaskLinkRequest,
-} from "../../services/gitHubService";
+} from "../..//services/githubService";
 
 interface GitHubTaskIntegrationProps {
   taskId: number;
   taskTitle: string;
+  projectId: number;
+  projectName: string;
 }
 
 export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
   taskId,
   taskTitle,
+  projectId,
+  projectName,
 }) => {
   const [activeTab, setActiveTab] = useState<"commits" | "pullRequests">(
     "commits"
   );
   const [isLinkingCommit, setIsLinkingCommit] = useState<number | null>(null);
   const [isLinkingPR, setIsLinkingPR] = useState<number | null>(null);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+
+  // Check if project has GitHub connections
+  const { data: connections, isLoading: isLoadingConnections } =
+    useProjectGitHubConnections(projectId);
 
   const {
     data: commits,
@@ -57,6 +70,8 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
 
   const createCommitLinkMutation = useCreateCommitTaskLink();
   const createPRLinkMutation = useCreatePRTaskLink();
+
+  const hasConnections = connections && connections.length > 0;
 
   const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -139,6 +154,92 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     [taskId, taskTitle, createPRLinkMutation]
   );
 
+  // If no connections exist, show connection prompt
+  if (isLoadingConnections) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="ml-2 text-gray-600">
+            Checking GitHub connections...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasConnections) {
+    return (
+      <>
+        <div className="bg-white rounded-lg border border-gray-200">
+          {/* Header */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+                <Github className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">
+                  GitHub Integration
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Connect GitHub to track commits and pull requests
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Connect Prompt */}
+          <div className="p-6">
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Github className="w-8 h-8 text-gray-400" />
+              </div>
+
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Connect GitHub Repository
+              </h3>
+              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                Connect a GitHub repository to this project to automatically
+                track commits and pull requests linked to your tasks.
+              </p>
+
+              <div className="space-y-4">
+                <Button
+                  onClick={() => setIsConnectModalOpen(true)}
+                  icon={<Plus className="w-5 h-5" />}
+                  className="bg-gray-900 hover:bg-gray-800"
+                >
+                  Connect GitHub Repository
+                </Button>
+
+                <div className="bg-blue-50 rounded-lg p-4 max-w-md mx-auto">
+                  <h4 className="font-medium text-blue-900 mb-2">
+                    What you'll get:
+                  </h4>
+                  <ul className="text-sm text-blue-800 space-y-1 text-left">
+                    <li>• Automatic commit tracking</li>
+                    <li>• Pull request integration</li>
+                    <li>• Task status updates from commits</li>
+                    <li>• Development progress visibility</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <GitHubConnectModal
+          isOpen={isConnectModalOpen}
+          onClose={() => setIsConnectModalOpen(false)}
+          projectId={projectId}
+          projectName={projectName}
+        />
+      </>
+    );
+  }
+
+  // Original component logic for when connections exist
   const CommitCard: React.FC<{ commit: GitHubCommit }> = ({ commit }) => (
     <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
       <div className="flex items-start justify-between">
@@ -395,16 +496,29 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     <div className="bg-white rounded-lg border border-gray-200">
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
-            <Github className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+              <Github className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">
+                GitHub Integration
+              </h3>
+              <p className="text-sm text-gray-600">
+                Commits and pull requests linked to this task
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">GitHub Integration</h3>
-            <p className="text-sm text-gray-600">
-              Commits and pull requests linked to this task
-            </p>
-          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsConnectModalOpen(true)}
+            icon={<Settings className="w-4 h-4" />}
+          >
+            Manage
+          </Button>
         </div>
       </div>
 
@@ -552,6 +666,13 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
           </div>
         )}
       </div>
+
+      <GitHubConnectModal
+        isOpen={isConnectModalOpen}
+        onClose={() => setIsConnectModalOpen(false)}
+        projectId={projectId}
+        projectName={projectName}
+      />
     </div>
   );
 };
