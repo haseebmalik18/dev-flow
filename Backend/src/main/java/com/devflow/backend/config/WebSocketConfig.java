@@ -3,6 +3,7 @@ package com.devflow.backend.config;
 import com.devflow.backend.service.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -36,6 +37,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
 
+    @Value("${APP_BASE_URL}")
+    private String baseUrl;
+
     // Track authenticated sessions by user
     private final Map<String, String> sessionToUsernameMap = new ConcurrentHashMap<>();
 
@@ -55,7 +59,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://localhost:5173",
                         "http://localhost:8080",
                         "https://devflow-*.vercel.app",
-                        "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app"
+                        "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app",
+                        baseUrl
                 );
     }
 

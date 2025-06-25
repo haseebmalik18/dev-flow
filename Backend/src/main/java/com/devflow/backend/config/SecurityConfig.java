@@ -1,6 +1,7 @@
 package com.devflow.backend.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -32,6 +33,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
+
+    @Value("${APP_BASE_URL}")
+    private String baseUrl;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -109,7 +113,8 @@ public class SecurityConfig {
                 "http://localhost:8080",
                 "https://devflow-*.vercel.app",
                 "https://your-production-domain.com",
-                "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app"
+                "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app",
+                baseUrl
         ));
 
         // Allow specific HTTP methods including file upload
