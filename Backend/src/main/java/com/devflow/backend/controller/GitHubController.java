@@ -1,4 +1,4 @@
-// GitHubController.java - Updated with Solution 1 (HttpServletResponse.sendRedirect)
+// GitHubController.java - Complete Fixed Version with Single OAuth Flow
 package com.devflow.backend.controller;
 
 import com.devflow.backend.dto.common.ApiResponse;
@@ -54,64 +54,113 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("GitHub authorization URL generated", response));
     }
 
-    @PostMapping("/oauth/callback")
-    public ResponseEntity<ApiResponse<GitHubAuthResponse>> handleOAuthCallback(
-            @Valid @RequestBody GitHubAuthRequest request,
-            HttpServletRequest httpRequest,
-            Authentication authentication) {
-
-        String userAgent = httpRequest.getHeader("User-Agent");
-        GitHubAuthResponse authResponse = oauthService.handleOAuthCallback(request, userAgent);
-
-        return ResponseEntity.ok(ApiResponse.success("GitHub authentication successful", authResponse));
-    }
-
     /**
-     * FIXED: OAuth callback redirect endpoint using HttpServletResponse.sendRedirect()
-     * This is the endpoint that GitHub redirects to after user authorization
+     * FIXED: Single OAuth callback endpoint that processes everything
+     * This handles the GitHub redirect and processes the OAuth flow completely
      */
     @GetMapping("/oauth/callback")
     public void handleOAuthCallbackRedirect(
-            @RequestParam("code") String code,
-            @RequestParam("state") String state,
+            @RequestParam(value = "code", required = false) String code,
+            @RequestParam(value = "state", required = false) String state,
             @RequestParam(value = "error", required = false) String error,
             @RequestParam(value = "error_description", required = false) String errorDescription,
             HttpServletRequest request,
             HttpServletResponse response) throws IOException {
 
-        // Log the callback for debugging
         log.info("GitHub OAuth callback received: code={}, state={}, error={}",
                 code != null ? "present" : "null", state, error);
 
-        // Get the frontend callback URL from the OAuth service
         String frontendCallbackUrl = oauthService.getFrontendCallbackUrl();
         StringBuilder callbackUrl = new StringBuilder(frontendCallbackUrl);
 
-        // Add query parameters
-        List<String> params = new ArrayList<>();
-        if (code != null) {
-            params.add("code=" + URLEncoder.encode(code, StandardCharsets.UTF_8));
-        }
-        if (state != null) {
-            params.add("state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
-        }
-        if (error != null) {
-            params.add("error=" + URLEncoder.encode(error, StandardCharsets.UTF_8));
-        }
-        if (errorDescription != null) {
-            params.add("error_description=" + URLEncoder.encode(errorDescription, StandardCharsets.UTF_8));
-        }
+        try {
+            if (error != null) {
+                // Handle OAuth error from GitHub
+                log.warn("GitHub OAuth error: {} - {}", error, errorDescription);
 
-        if (!params.isEmpty()) {
+                List<String> params = new ArrayList<>();
+                params.add("error=" + URLEncoder.encode(error, StandardCharsets.UTF_8));
+                if (errorDescription != null) {
+                    params.add("error_description=" + URLEncoder.encode(errorDescription, StandardCharsets.UTF_8));
+                }
+                callbackUrl.append("?").append(String.join("&", params));
+
+            } else if (code != null && state != null) {
+                // SUCCESS CASE: Process OAuth in backend completely
+                log.info("Processing OAuth callback with code and state");
+
+                // Create the OAuth request object (reusing existing DTO)
+                GitHubAuthRequest authRequest = new GitHubAuthRequest();
+                authRequest.setCode(code);
+                authRequest.setState(state);
+
+                // Process the OAuth callback using existing service method
+                String userAgent = request.getHeader("User-Agent");
+                GitHubAuthResponse authResponse = oauthService.handleOAuthCallback(authRequest, userAgent);
+
+                // SUCCESS: OAuth processed successfully
+                log.info("OAuth processed successfully for GitHub user: {}",
+                        authResponse.getUserInfo() != null ? authResponse.getUserInfo().getLogin() : "unknown");
+
+                // Pass success data to frontend
+                List<String> params = new ArrayList<>();
+                params.add("success=true");
+                params.add("message=" + URLEncoder.encode("GitHub connected successfully!", StandardCharsets.UTF_8));
+
+                // Include GitHub user info for display
+                if (authResponse.getUserInfo() != null) {
+                    params.add("github_user=" + URLEncoder.encode(authResponse.getUserInfo().getLogin(), StandardCharsets.UTF_8));
+                    if (authResponse.getUserInfo().getName() != null) {
+                        params.add("github_name=" + URLEncoder.encode(authResponse.getUserInfo().getName(), StandardCharsets.UTF_8));
+                    }
+                }
+
+                // Include repository count for display
+                if (authResponse.getAccessibleRepositories() != null) {
+                    params.add("repo_count=" + authResponse.getAccessibleRepositories().size());
+                }
+
+                callbackUrl.append("?").append(String.join("&", params));
+
+            } else {
+                // Missing required parameters
+                log.warn("OAuth callback missing required parameters: code={}, state={}", code, state);
+
+                List<String> params = List.of(
+                        "error=" + URLEncoder.encode("invalid_request", StandardCharsets.UTF_8),
+                        "error_description=" + URLEncoder.encode("Missing required parameters (code or state)", StandardCharsets.UTF_8)
+                );
+                callbackUrl.append("?").append(String.join("&", params));
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to process OAuth callback: {}", e.getMessage(), e);
+
+            // Pass detailed error info to frontend for better debugging
+            List<String> params = new ArrayList<>();
+            params.add("error=" + URLEncoder.encode("processing_error", StandardCharsets.UTF_8));
+
+            String errorMsg = "Failed to process GitHub authorization";
+            if (e.getMessage() != null) {
+                errorMsg += ": " + e.getMessage();
+            }
+            params.add("error_description=" + URLEncoder.encode(errorMsg, StandardCharsets.UTF_8));
+
             callbackUrl.append("?").append(String.join("&", params));
         }
 
         String finalRedirectUrl = callbackUrl.toString();
         log.info("Redirecting to frontend callback URL: {}", finalRedirectUrl);
 
-        // FIXED: Use HttpServletResponse.sendRedirect() for proper HTTP redirect
+        // Perform the actual redirect
         response.sendRedirect(finalRedirectUrl);
     }
+
+    /**
+     * REMOVED: POST OAuth callback endpoint to prevent double state consumption
+     * The GET endpoint above now handles all OAuth processing
+     */
+    // @PostMapping("/oauth/callback") - REMOVED TO FIX DOUBLE STATE CONSUMPTION
 
     @GetMapping("/repositories/search")
     public ResponseEntity<ApiResponse<RepositorySearchResult>> searchRepositories(

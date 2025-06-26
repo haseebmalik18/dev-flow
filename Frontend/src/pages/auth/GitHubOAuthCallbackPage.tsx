@@ -1,3 +1,4 @@
+// GitHubOAuthCallbackPage.tsx - Updated for Backend-Processed OAuth Flow
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Loader2, CheckCircle, XCircle, Github } from "lucide-react";
@@ -12,21 +13,27 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
   useEffect(() => {
     const processCallback = () => {
       try {
-        // Get parameters from URL
-        const code = searchParams.get("code");
-        const state = searchParams.get("state");
+        // UPDATED: Get parameters from URL - these now come from backend processing
+        const success = searchParams.get("success");
         const error = searchParams.get("error");
         const errorDescription = searchParams.get("error_description");
+        const messageParam = searchParams.get("message");
+        const githubUser = searchParams.get("github_user");
+        const githubName = searchParams.get("github_name");
+        const repoCount = searchParams.get("repo_count");
 
         console.log("GitHub OAuth callback received:", {
-          code: code ? "present" : "missing",
-          state: state ? "present" : "missing",
+          success,
           error,
           errorDescription,
+          message: messageParam,
+          githubUser,
+          githubName,
+          repoCount,
         });
 
         if (error) {
-          // Handle OAuth error
+          // Handle OAuth error from backend
           const errorMsg =
             errorDescription || error || "Unknown error occurred";
           console.error("GitHub OAuth error:", errorMsg);
@@ -55,27 +62,76 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           return;
         }
 
-        if (!code || !state) {
-          const errorMsg = "Missing authorization code or state parameter";
-          console.error("GitHub OAuth error:", errorMsg);
+        if (success === "true") {
+          // SUCCESS: Backend already processed OAuth completely
+          console.log(
+            "GitHub OAuth success, backend already processed everything"
+          );
 
-          setStatus("error");
-          setMessage(errorMsg);
+          setStatus("success");
 
-          // Send error message to parent window
+          // Enhanced success message with user info
+          let successMsg = messageParam || "Authorization successful!";
+          if (githubUser) {
+            successMsg += ` Connected as ${githubName || githubUser}.`;
+          }
+          if (repoCount) {
+            successMsg += ` Found ${repoCount} accessible repositories.`;
+          }
+          successMsg += " Closing window...";
+
+          setMessage(successMsg);
+
+          // Send success message to parent window with enhanced data
           if (window.opener) {
             window.opener.postMessage(
               {
-                type: "GITHUB_OAUTH_ERROR",
-                error: "missing_parameters",
-                description: errorMsg,
-                message: errorMsg,
+                type: "GITHUB_OAUTH_SUCCESS",
+                message: messageParam,
+                github_user: githubUser,
+                github_name: githubName,
+                repo_count: repoCount,
+                // Note: No code/state since backend processed everything
               },
               window.location.origin
             );
           }
 
-          // Close popup after showing error briefly
+          // Close popup after brief delay
+          setTimeout(() => {
+            window.close();
+          }, 2000); // Slightly longer delay to show enhanced message
+
+          return;
+        }
+
+        // LEGACY SUPPORT: Handle old flow with code/state (should not happen with new backend)
+        const code = searchParams.get("code");
+        const state = searchParams.get("state");
+
+        if (code && state) {
+          console.warn(
+            "Received legacy code/state parameters - this should not happen with new backend flow"
+          );
+
+          setStatus("error");
+          setMessage(
+            "Legacy OAuth flow detected. Please update your application."
+          );
+
+          if (window.opener) {
+            window.opener.postMessage(
+              {
+                type: "GITHUB_OAUTH_ERROR",
+                error: "legacy_flow",
+                description: "Legacy OAuth flow is no longer supported",
+                message:
+                  "Please update your application to use the new OAuth flow",
+              },
+              window.location.origin
+            );
+          }
+
           setTimeout(() => {
             window.close();
           }, 3000);
@@ -83,28 +139,27 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           return;
         }
 
-        // Success case
-        console.log("GitHub OAuth success, sending data to parent window");
+        // FALLBACK: No recognizable parameters
+        console.error("No valid OAuth callback parameters found");
 
-        setStatus("success");
-        setMessage("Authorization successful! Closing window...");
+        setStatus("error");
+        setMessage("Invalid callback - no authorization parameters found");
 
-        // Send success message to parent window
         if (window.opener) {
           window.opener.postMessage(
             {
-              type: "GITHUB_OAUTH_SUCCESS",
-              code: code,
-              state: state,
+              type: "GITHUB_OAUTH_ERROR",
+              error: "invalid_callback",
+              description: "No valid authorization parameters found",
+              message: "Invalid OAuth callback - please try again",
             },
             window.location.origin
           );
         }
 
-        // Close popup after brief delay
         setTimeout(() => {
           window.close();
-        }, 1000);
+        }, 3000);
       } catch (error) {
         console.error("Error processing GitHub OAuth callback:", error);
 
@@ -203,13 +258,17 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
 
         {status === "success" && (
           <div className="text-sm text-gray-600 mb-4">
-            You can close this window and return to DevFlow.
+            <p>✅ GitHub account successfully connected!</p>
+            <p className="mt-1">
+              You can close this window and return to DevFlow.
+            </p>
           </div>
         )}
 
         {status === "error" && (
           <div className="text-sm text-gray-600 mb-4">
-            Please try the authorization process again.
+            <p>❌ Authorization failed</p>
+            <p className="mt-1">Please try the authorization process again.</p>
           </div>
         )}
 
@@ -224,6 +283,30 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
         <div className="mt-6 text-xs text-gray-500">
           If this window doesn't close automatically, you can close it manually.
         </div>
+
+        {/* Enhanced debug info in development */}
+        {process.env.NODE_ENV === "development" && (
+          <div className="mt-4 p-3 bg-gray-100 rounded-lg text-left">
+            <h4 className="text-xs font-medium text-gray-700 mb-2">
+              Debug Info (Development Only):
+            </h4>
+            <div className="text-xs text-gray-600 space-y-1">
+              <p>URL Params:</p>
+              <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <li>success: {searchParams.get("success") || "null"}</li>
+                <li>error: {searchParams.get("error") || "null"}</li>
+                <li>
+                  github_user: {searchParams.get("github_user") || "null"}
+                </li>
+                <li>
+                  github_name: {searchParams.get("github_name") || "null"}
+                </li>
+                <li>repo_count: {searchParams.get("repo_count") || "null"}</li>
+                <li>message: {searchParams.get("message") || "null"}</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
