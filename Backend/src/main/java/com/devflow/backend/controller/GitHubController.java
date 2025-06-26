@@ -1,4 +1,3 @@
-
 package com.devflow.backend.controller;
 
 import com.devflow.backend.dto.common.ApiResponse;
@@ -7,6 +6,7 @@ import com.devflow.backend.entity.User;
 import com.devflow.backend.service.GitHubIntegrationService;
 import com.devflow.backend.service.GitHubOAuthService;
 import com.devflow.backend.service.GitHubWebhookService;
+import com.devflow.backend.service.GitHubRepositorySearchService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -35,7 +35,7 @@ public class GitHubController {
     private final GitHubIntegrationService githubService;
     private final GitHubOAuthService oauthService;
     private final GitHubWebhookService webhookService;
-
+    private final GitHubRepositorySearchService repositorySearchService;
 
     @PostMapping("/oauth/authorize")
     public ResponseEntity<ApiResponse<Map<String, String>>> initiateOAuth(
@@ -142,13 +142,13 @@ public class GitHubController {
 
     @GetMapping("/repositories/search")
     public ResponseEntity<ApiResponse<RepositorySearchResult>> searchRepositories(
-            @RequestParam String accessToken,
             @RequestParam String query,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "30") int perPage,
             Authentication authentication) {
 
-        RepositorySearchResult result = oauthService.searchRepositories(accessToken, query, page, perPage);
+        User user = (User) authentication.getPrincipal();
+        RepositorySearchResult result = repositorySearchService.searchUserRepositories(user, query, page, perPage);
 
         return ResponseEntity.ok(ApiResponse.success("Repositories retrieved successfully", result));
     }
@@ -157,15 +157,13 @@ public class GitHubController {
     public ResponseEntity<ApiResponse<RepositoryInfo>> getRepositoryInfo(
             @PathVariable String owner,
             @PathVariable String repo,
-            @RequestParam String accessToken,
             Authentication authentication) {
 
-        RepositoryInfo repositoryInfo = oauthService.getRepositoryInfo(accessToken, owner, repo);
+        User user = (User) authentication.getPrincipal();
+        RepositoryInfo repositoryInfo = repositorySearchService.getRepositoryInfo(user, owner, repo);
 
         return ResponseEntity.ok(ApiResponse.success("Repository information retrieved successfully", repositoryInfo));
     }
-
-
 
     @PostMapping("/connections")
     public ResponseEntity<ApiResponse<ConnectionResponse>> createConnection(
@@ -224,7 +222,6 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("Connection sync completed", syncResponse));
     }
 
-
     @DeleteMapping("/dev/projects/{projectId}/connections/clear")
     public ResponseEntity<ApiResponse<Map<String, Object>>> clearProjectConnections(
             @PathVariable Long projectId,
@@ -233,7 +230,6 @@ public class GitHubController {
         User user = (User) authentication.getPrincipal();
 
         try {
-
             List<ConnectionResponse> connections = githubService.getProjectConnections(projectId, user);
 
             int deletedCount = 0;
@@ -260,8 +256,6 @@ public class GitHubController {
                     .body(ApiResponse.error("Failed to clear project connections: " + e.getMessage()));
         }
     }
-
-
 
     @GetMapping("/projects/{projectId}/commits")
     public ResponseEntity<ApiResponse<Page<CommitResponse>>> getProjectCommits(
@@ -301,8 +295,6 @@ public class GitHubController {
                 .body(ApiResponse.success("Commit-task link created successfully", link));
     }
 
-
-
     @GetMapping("/projects/{projectId}/pull-requests")
     public ResponseEntity<ApiResponse<Page<PullRequestResponse>>> getProjectPullRequests(
             @PathVariable Long projectId,
@@ -341,8 +333,6 @@ public class GitHubController {
                 .body(ApiResponse.success("PR-task link created successfully", link));
     }
 
-
-
     @PostMapping("/search")
     public ResponseEntity<ApiResponse<GitHubSearchResponse>> search(
             @Valid @RequestBody GitHubSearchRequest request,
@@ -354,8 +344,6 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("Search completed successfully", searchResponse));
     }
 
-
-
     @GetMapping("/projects/{projectId}/statistics")
     public ResponseEntity<ApiResponse<GitHubStatistics>> getProjectStatistics(
             @PathVariable Long projectId,
@@ -366,8 +354,6 @@ public class GitHubController {
 
         return ResponseEntity.ok(ApiResponse.success("GitHub statistics retrieved successfully", statistics));
     }
-
-
 
     @PostMapping("/webhook")
     public ResponseEntity<ApiResponse<WebhookEventResponse>> handleWebhook(
@@ -411,7 +397,6 @@ public class GitHubController {
         }
     }
 
-
     @GetMapping("/health")
     public ResponseEntity<ApiResponse<Map<String, Object>>> healthCheck() {
         Map<String, Object> health = Map.of(
@@ -422,8 +407,6 @@ public class GitHubController {
 
         return ResponseEntity.ok(ApiResponse.success("GitHub integration service is healthy", health));
     }
-
-
 
     @GetMapping("/admin/connections")
     public ResponseEntity<ApiResponse<List<ConnectionSummary>>> getAllConnections(
@@ -449,10 +432,8 @@ public class GitHubController {
                     .body(ApiResponse.error("Admin access required"));
         }
 
-
         return ResponseEntity.ok(ApiResponse.success("Connection reset successfully"));
     }
-
 
     @PostMapping("/oauth/reset")
     public ResponseEntity<ApiResponse<Map<String, String>>> resetOAuthForTesting(
@@ -462,8 +443,6 @@ public class GitHubController {
         User user = (User) authentication.getPrincipal();
 
         try {
-
-
             log.info("Reset OAuth state for user {} and project {} for testing",
                     user.getId(), projectId);
 
@@ -482,8 +461,6 @@ public class GitHubController {
                     .body(ApiResponse.error("Failed to reset OAuth state: " + e.getMessage()));
         }
     }
-
-
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Object>> handleIllegalArgument(IllegalArgumentException e) {

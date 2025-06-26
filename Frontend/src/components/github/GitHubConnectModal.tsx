@@ -20,6 +20,7 @@ import {
   useGitHubOAuth,
   useSearchGitHubRepositories,
   useCreateGitHubConnection,
+  useProjectGitHubConnections,
 } from "../../hooks/useGithub";
 import { api } from "../../config/api";
 import type { GitHubRepository } from "../../services/gitHubService";
@@ -203,11 +204,18 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   const gitHubOAuthMutation = useGitHubOAuth();
   const createConnectionMutation = useCreateGitHubConnection();
 
+  // Check existing connections
+  const { data: existingConnections } = useProjectGitHubConnections(projectId);
+
   const {
     data: searchResults,
     isLoading: isSearching,
     error: searchError,
   } = useSearchGitHubRepositories(accessToken, searchQuery, 1, 50);
+
+  // Check if project already has GitHub connections
+  const hasExistingConnections =
+    existingConnections && existingConnections.length > 0;
 
   useEffect(() => {
     if (isOpen && (!projectId || isNaN(projectId) || projectId <= 0)) {
@@ -219,6 +227,36 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
       onClose();
     }
   }, [isOpen, projectId, onClose]);
+
+  // Check for existing connections when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      console.log("🔍 Checking for existing GitHub connections...");
+
+      // If there are existing connections, skip OAuth and go to search
+      if (hasExistingConnections) {
+        console.log("✅ Found existing GitHub connections, skipping OAuth");
+        setStep("search");
+        setAccessToken("existing_connection");
+        setGithubUserInfo({
+          login: "Connected User",
+          name: "GitHub User",
+          avatarUrl: "https://github.com/github.png",
+        });
+      } else {
+        console.log("❌ No existing connections found, starting OAuth flow");
+        // Reset to initial state only if no existing connections
+        setStep("oauth");
+        setAccessToken("");
+        setSearchQuery("");
+        setSelectedRepo(null);
+        setGithubUserInfo(null);
+        setOauthError(null);
+        resetOAuthState();
+        hasProcessedCallbackRef.current = false;
+      }
+    }
+  }, [isOpen, hasExistingConnections]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -284,9 +322,10 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     return () => window.removeEventListener("message", handleMessage);
   }, [isOpen]);
 
+  // Only reset state when modal closes AND no existing connections
   useEffect(() => {
-    if (!isOpen) {
-      console.log("🔄 Resetting OAuth modal state");
+    if (!isOpen && !hasExistingConnections) {
+      console.log("🔄 Resetting OAuth modal state (no existing connections)");
 
       setStep("oauth");
       setAccessToken("");
@@ -300,7 +339,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
       closePopupSafely();
     }
-  }, [isOpen]);
+  }, [isOpen, hasExistingConnections]);
 
   const handleStartOAuth = useCallback(
     (e: React.MouseEvent) => {
@@ -578,7 +617,25 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
           <DevGitHubReset projectId={projectId} />
 
-          {step === "oauth" && (
+          {/* Show existing connections notice if applicable */}
+          {hasExistingConnections && step === "search" && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start space-x-3">
+                <Github className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-blue-800">
+                    GitHub Already Connected
+                  </h3>
+                  <p className="text-sm text-blue-700 mt-1">
+                    This project already has GitHub connections. You can add
+                    additional repositories or manage existing ones.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === "oauth" && !hasExistingConnections && (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Github className="w-8 h-8 text-gray-600" />
@@ -647,12 +704,14 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={handleResetOAuth}
-                    className="text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    Change Account
-                  </button>
+                  {!hasExistingConnections && (
+                    <button
+                      onClick={handleResetOAuth}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Change Account
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -682,11 +741,16 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={!accessToken || accessToken === "backend_processed"}
+                  disabled={
+                    !accessToken ||
+                    accessToken === "backend_processed" ||
+                    accessToken === "existing_connection"
+                  }
                 />
               </div>
 
-              {accessToken === "backend_processed" && (
+              {(accessToken === "backend_processed" ||
+                accessToken === "existing_connection") && (
                 <div className="text-center py-8">
                   <Github className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">

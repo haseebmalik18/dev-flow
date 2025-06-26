@@ -28,7 +28,7 @@ import type {
   GitHubCommit,
   GitHubPullRequest,
   CreateTaskLinkRequest,
-} from "../../services/githubService";
+} from "../../services/gitHubService";
 
 interface GitHubTaskIntegrationProps {
   taskId: number;
@@ -49,6 +49,7 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
   const [isLinkingCommit, setIsLinkingCommit] = useState<number | null>(null);
   const [isLinkingPR, setIsLinkingPR] = useState<number | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [lastConnectionCheck, setLastConnectionCheck] = useState(Date.now());
 
   console.log("GitHubTaskIntegration props:", {
     taskId,
@@ -69,24 +70,70 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     data: connections,
     isLoading: isLoadingConnections,
     error: connectionsError,
+    refetch: refetchConnections,
   } = useProjectGitHubConnections(isValidProject ? projectId : 0);
 
   const {
     data: commits,
     isLoading: isLoadingCommits,
     error: commitsError,
+    refetch: refetchCommits,
   } = useTaskGitHubCommits(isValidTask ? taskId : 0);
 
   const {
     data: pullRequests,
     isLoading: isLoadingPRs,
     error: prsError,
+    refetch: refetchPRs,
   } = useTaskGitHubPullRequests(isValidTask ? taskId : 0);
 
   const createCommitLinkMutation = useCreateCommitTaskLink();
   const createPRLinkMutation = useCreatePRTaskLink();
 
   const hasConnections = connections && connections.length > 0;
+  const hasActiveConnections =
+    connections && connections.some((conn) => conn.status === "ACTIVE");
+
+  React.useEffect(() => {
+    const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastConnectionCheck > 5000) {
+        console.log("Window focused - refreshing GitHub connections");
+        refetchConnections();
+        if (hasConnections) {
+          refetchCommits();
+          refetchPRs();
+        }
+        setLastConnectionCheck(now);
+      }
+    };
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data.type === "GITHUB_OAUTH_SUCCESS") {
+        console.log("GitHub OAuth success detected - refreshing connections");
+        setTimeout(() => {
+          refetchConnections();
+          setLastConnectionCheck(Date.now());
+        }, 1000);
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("message", handleMessage);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [
+    lastConnectionCheck,
+    refetchConnections,
+    refetchCommits,
+    refetchPRs,
+    hasConnections,
+  ]);
 
   const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -325,6 +372,19 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
                   Connect GitHub Repository
                 </Button>
 
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    console.log("Manual refresh triggered");
+                    refetchConnections();
+                    setLastConnectionCheck(Date.now());
+                  }}
+                  icon={<Settings className="w-4 h-4" />}
+                  size="sm"
+                >
+                  Refresh
+                </Button>
+
                 <div className="bg-blue-50 rounded-lg p-4 max-w-md mx-auto">
                   <h4 className="font-medium text-blue-900 mb-2">
                     What you'll get:
@@ -343,7 +403,14 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
 
         <GitHubConnectModal
           isOpen={isConnectModalOpen}
-          onClose={() => setIsConnectModalOpen(false)}
+          onClose={() => {
+            setIsConnectModalOpen(false);
+            setTimeout(() => {
+              console.log("Modal closed - refreshing connections");
+              refetchConnections();
+              setLastConnectionCheck(Date.now());
+            }, 500);
+          }}
           projectId={projectId}
           projectName={projectName}
         />
@@ -670,114 +737,148 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
       </div>
 
       <div className="p-4">
-        {activeTab === "commits" && (
-          <div>
-            {isLoadingCommits ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                <span className="ml-2 text-gray-600">Loading commits...</span>
-              </div>
-            ) : commitsError ? (
-              <div className="text-center py-8">
-                <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Failed to load commits
-                </h3>
-                <p className="text-gray-600">
-                  There was an error loading the linked commits.
-                </p>
-              </div>
-            ) : commits && commits.length > 0 ? (
-              <div className="space-y-4">
-                {commits.map((commit) => (
-                  <CommitCard key={commit.id} commit={commit} />
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <GitCommit className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No linked commits
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Commits will appear here when they reference this task in
-                  their message.
-                </p>
-                <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-4">
-                  <p className="font-medium mb-2">How to link commits:</p>
-                  <ul className="space-y-1 text-left">
-                    <li>• Include "#{taskId}" in your commit message</li>
-                    <li>
-                      • Use "fixes #{taskId}" to automatically close the task
-                    </li>
-                    <li>
-                      • Use "closes #{taskId}" or "resolves #{taskId}"
-                    </li>
-                  </ul>
-                </div>
+        {hasActiveConnections ? (
+          <>
+            {activeTab === "commits" && (
+              <div>
+                {isLoadingCommits ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                    <span className="ml-2 text-gray-600">
+                      Loading commits...
+                    </span>
+                  </div>
+                ) : commitsError ? (
+                  <div className="text-center py-8">
+                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      Failed to load commits
+                    </h3>
+                    <p className="text-gray-600">
+                      There was an error loading the linked commits.
+                    </p>
+                  </div>
+                ) : commits && commits.length > 0 ? (
+                  <div className="space-y-4">
+                    {commits.map((commit) => (
+                      <CommitCard key={commit.id} commit={commit} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <GitCommit className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      No linked commits
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      Commits will appear here when they reference this task in
+                      their message.
+                    </p>
+                    <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-4">
+                      <p className="font-medium mb-2">How to link commits:</p>
+                      <ul className="space-y-1 text-left">
+                        <li>• Include "#{taskId}" in your commit message</li>
+                        <li>
+                          • Use "fixes #{taskId}" to automatically close the
+                          task
+                        </li>
+                        <li>
+                          • Use "closes #{taskId}" or "resolves #{taskId}"
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {activeTab === "pullRequests" && (
-          <div>
-            {isLoadingPRs ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                <span className="ml-2 text-gray-600">
-                  Loading pull requests...
-                </span>
-              </div>
-            ) : prsError ? (
-              <div className="text-center py-8">
-                <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Failed to load pull requests
-                </h3>
-                <p className="text-gray-600">
-                  There was an error loading the linked pull requests.
-                </p>
-              </div>
-            ) : pullRequests && pullRequests.length > 0 ? (
-              <div className="space-y-4">
-                {pullRequests.map((pr) => (
-                  <PullRequestCard key={pr.id} pr={pr} />
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <GitPullRequest className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No linked pull requests
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Pull requests will appear here when they reference this task.
-                </p>
-                <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-4">
-                  <p className="font-medium mb-2">How to link pull requests:</p>
-                  <ul className="space-y-1 text-left">
-                    <li>
-                      • Include "#{taskId}" in your PR title or description
-                    </li>
-                    <li>
-                      • Use "fixes #{taskId}" to automatically update task
-                      status
-                    </li>
-                    <li>
-                      • Task status will update when PR is merged or closed
-                    </li>
-                  </ul>
-                </div>
+            {activeTab === "pullRequests" && (
+              <div>
+                {isLoadingPRs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                    <span className="ml-2 text-gray-600">
+                      Loading pull requests...
+                    </span>
+                  </div>
+                ) : prsError ? (
+                  <div className="text-center py-8">
+                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      Failed to load pull requests
+                    </h3>
+                    <p className="text-gray-600">
+                      There was an error loading the linked pull requests.
+                    </p>
+                  </div>
+                ) : pullRequests && pullRequests.length > 0 ? (
+                  <div className="space-y-4">
+                    {pullRequests.map((pr) => (
+                      <PullRequestCard key={pr.id} pr={pr} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <GitPullRequest className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      No linked pull requests
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      Pull requests will appear here when they reference this
+                      task.
+                    </p>
+                    <div className="text-sm text-gray-500 bg-gray-50 rounded-lg p-4">
+                      <p className="font-medium mb-2">
+                        How to link pull requests:
+                      </p>
+                      <ul className="space-y-1 text-left">
+                        <li>
+                          • Include "#{taskId}" in your PR title or description
+                        </li>
+                        <li>
+                          • Use "fixes #{taskId}" to automatically update task
+                          status
+                        </li>
+                        <li>
+                          • Task status will update when PR is merged or closed
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+          </>
+        ) : (
+          <div className="text-center py-8">
+            <AlertTriangle className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              No Active Connections
+            </h3>
+            <p className="text-gray-600 mb-4">
+              GitHub repositories are connected but none are currently active.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => setIsConnectModalOpen(true)}
+              icon={<Settings className="w-4 h-4" />}
+            >
+              Check Connection Status
+            </Button>
           </div>
         )}
       </div>
 
       <GitHubConnectModal
         isOpen={isConnectModalOpen}
-        onClose={() => setIsConnectModalOpen(false)}
+        onClose={() => {
+          setIsConnectModalOpen(false);
+          setTimeout(() => {
+            console.log("Modal closed - refreshing connections");
+            refetchConnections();
+            setLastConnectionCheck(Date.now());
+          }, 500);
+        }}
         projectId={projectId}
         projectName={projectName}
       />
