@@ -37,8 +37,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
 
-    @Value("${APP_BASE_URL}")
+    @Value("${app.base-url}")
     private String baseUrl;
+
+    @Value("${app.ngrok-frontend-url}")
+    private String ngrokFrontendUrl;
 
     // Track authenticated sessions by user
     private final Map<String, String> sessionToUsernameMap = new ConcurrentHashMap<>();
@@ -59,7 +62,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "http://localhost:5173",
                         "http://localhost:8080",
                         "https://devflow-*.vercel.app",
-                        "https://f9cd-2600-4808-5392-d600-c169-c8bd-9682-5e51.ngrok-free.app",
+                        // Use the ngrok frontend URL from environment variable
+                        ngrokFrontendUrl,
                         baseUrl
                 );
     }

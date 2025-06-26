@@ -76,9 +76,9 @@ public class GitHubController {
         log.info("GitHub OAuth callback received: code={}, state={}, error={}",
                 code != null ? "present" : "null", state, error);
 
-        // Build the frontend callback URL
-        String baseUrl = getBaseUrl(request);
-        StringBuilder callbackUrl = new StringBuilder(baseUrl + "/auth/github/callback");
+        // Get the frontend callback URL from the OAuth service
+        String frontendCallbackUrl = oauthService.getFrontendCallbackUrl();
+        StringBuilder callbackUrl = new StringBuilder(frontendCallbackUrl);
 
         // Add query parameters
         List<String> params = new ArrayList<>();
@@ -99,7 +99,9 @@ public class GitHubController {
             callbackUrl.append("?").append(String.join("&", params));
         }
 
-        // Redirect to frontend callback page
+        log.info("Redirecting to frontend callback URL: {}", callbackUrl.toString());
+
+        // Redirect to frontend callback page (this will be the popup window)
         return "redirect:" + callbackUrl.toString();
     }
 
@@ -452,40 +454,6 @@ public class GitHubController {
 
         // This would reset connection errors and force resync
         return ResponseEntity.ok(ApiResponse.success("Connection reset successfully"));
-    }
-
-    // Helper method to determine base URL
-    private String getBaseUrl(HttpServletRequest request) {
-        String scheme = request.getScheme();
-        String serverName = request.getServerName();
-        int serverPort = request.getServerPort();
-
-        // Check for ngrok forwarding
-        String forwardedHost = request.getHeader("X-Forwarded-Host");
-        String forwardedProto = request.getHeader("X-Forwarded-Proto");
-
-        if (forwardedHost != null && forwardedProto != null) {
-            // ngrok is forwarding the request - use the ngrok frontend URL from config
-            return "https://6c52-2600-4808-5392-d600-41ac-ed5b-37df-afb7.ngrok-free.app";
-        }
-
-        // For development, frontend typically runs on different port
-        if ("localhost".equals(serverName) || "127.0.0.1".equals(serverName)) {
-            // Check if we're running in development mode
-            if (serverPort == 3000) {
-                return "http://localhost:8080"; // Frontend development port
-            }
-        }
-
-        // Production or other environments
-        StringBuilder url = new StringBuilder();
-        url.append(scheme).append("://").append(serverName);
-
-        if (serverPort != 80 && serverPort != 443) {
-            url.append(":").append(serverPort);
-        }
-
-        return url.toString();
     }
 
     // Error handling

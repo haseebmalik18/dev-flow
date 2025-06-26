@@ -34,8 +34,11 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
 
-    @Value("${APP_BASE_URL}")
+    @Value("${app.base-url}")
     private String baseUrl;
+
+    @Value("${app.ngrok-frontend-url}")
+    private String ngrokFrontendUrl;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -48,6 +51,11 @@ public class SecurityConfig {
 
                         // Public health check
                         .requestMatchers("/api/v1/health").permitAll()
+
+                        // GitHub OAuth and webhook endpoints (public for OAuth flow and GitHub webhooks)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/github/oauth/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/github/webhook").permitAll()
+                        .requestMatchers("/api/v1/github/health").permitAll()
 
                         // WebSocket endpoints (authentication handled in WebSocket config)
                         .requestMatchers("/ws/**").permitAll()
@@ -86,6 +94,9 @@ public class SecurityConfig {
                         // User endpoints
                         .requestMatchers("/api/v1/users/**").authenticated()
 
+                        // GitHub integration endpoints (require authentication except webhook/callback)
+                        .requestMatchers("/api/v1/github/**").authenticated()
+
                         // Admin endpoints (for file validation/management)
                         .requestMatchers("/api/v1/attachments/admin/**").hasRole("ADMIN")
 
@@ -105,7 +116,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Allow specific origins (update for production)
+        // Allow specific origins (including ngrok frontend URL)
         configuration.setAllowedOriginPatterns(List.of(
                 "http://localhost:3000",
                 "http://localhost:3001",
@@ -113,7 +124,8 @@ public class SecurityConfig {
                 "http://localhost:8080",
                 "https://devflow-*.vercel.app",
                 "https://your-production-domain.com",
-                "https://f9cd-2600-4808-5392-d600-c169-c8bd-9682-5e51.ngrok-free.app",
+                // Use the ngrok frontend URL from environment variable
+                ngrokFrontendUrl,
                 baseUrl
         ));
 
@@ -126,7 +138,6 @@ public class SecurityConfig {
                 "OPTIONS",
                 "PATCH"
         ));
-
 
         configuration.setAllowedHeaders(List.of(
                 "*",
@@ -144,7 +155,6 @@ public class SecurityConfig {
                 "Sec-WebSocket-Key",
                 "Sec-WebSocket-Extensions"
         ));
-
 
         configuration.setExposedHeaders(List.of(
                 "Authorization",

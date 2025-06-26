@@ -41,14 +41,10 @@ public class GitHubOAuthService {
     @Value("${app.base-url:}")
     private String baseUrl;
 
-    // Add ngrok URL support
-    @Value("${app.ngrok-url:}")
-    private String ngrokUrl;
-
     @Value("${app.backend-base-url:}")
     private String backendBaseUrl;
 
-    // Add ngrok frontend URL support
+    // Frontend URL for redirecting after OAuth processing
     @Value("${app.ngrok-frontend-url:}")
     private String ngrokFrontendUrl;
 
@@ -248,26 +244,48 @@ public class GitHubOAuthService {
 
     /**
      * Get the appropriate redirect URI based on configuration and environment
+     * This should ALWAYS point to the backend OAuth callback endpoint
      */
     private String getRedirectUri() {
-        // Priority order: configured redirect URI > ngrok URL > backend base URL > base URL
         String redirectUri;
 
         if (configuredRedirectUri != null && !configuredRedirectUri.trim().isEmpty()) {
             redirectUri = configuredRedirectUri;
-        } else if (ngrokUrl != null && !ngrokUrl.trim().isEmpty()) {
-            redirectUri = ngrokUrl + "/api/v1/github/oauth/callback";
-        } else if (backendBaseUrl != null && !backendBaseUrl.trim().isEmpty()) {
-            redirectUri = backendBaseUrl + "/api/v1/github/oauth/callback";
-        } else if (baseUrl != null && !baseUrl.trim().isEmpty()) {
-            redirectUri = baseUrl + "/api/v1/github/oauth/callback";
         } else {
-            // Fallback for development
-            redirectUri = "http://localhost:3000/api/v1/github/oauth/callback";
+            // Always use backend URL for OAuth callback
+            String backendUrl = backendBaseUrl;
+
+            // If no backend base URL configured, construct from Railway domain
+            if (backendUrl == null || backendUrl.trim().isEmpty()) {
+                // For Railway deployment
+                backendUrl = "https://dev-flow-production.up.railway.app";
+            }
+
+            redirectUri = backendUrl + "/api/v1/github/oauth/callback";
         }
 
         log.info("Using GitHub OAuth redirect URI: {}", redirectUri);
         return redirectUri;
+    }
+
+    /**
+     * Get the frontend callback URL for redirecting after OAuth processing
+     * This is where the backend redirects to after processing the OAuth callback
+     */
+    public String getFrontendCallbackUrl() {
+        String frontendUrl = ngrokFrontendUrl;
+
+        if (frontendUrl == null || frontendUrl.trim().isEmpty()) {
+            // Fallback to configured frontend URL
+            frontendUrl = "https://f9cd-2600-4808-5392-d600-c169-c8bd-9682-5e51.ngrok-free.app";
+        }
+
+        // Remove trailing slash if present
+        if (frontendUrl.endsWith("/")) {
+            frontendUrl = frontendUrl.substring(0, frontendUrl.length() - 1);
+        }
+
+        return frontendUrl + "/auth/github/callback";
     }
 
     private String generateSecureState(User user, Long projectId) {
