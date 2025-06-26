@@ -1,4 +1,4 @@
-// GitHubController.java
+// GitHubController.java - Updated with Solution 1 (HttpServletResponse.sendRedirect)
 package com.devflow.backend.controller;
 
 import com.devflow.backend.dto.common.ApiResponse;
@@ -8,6 +8,7 @@ import com.devflow.backend.service.GitHubIntegrationService;
 import com.devflow.backend.service.GitHubOAuthService;
 import com.devflow.backend.service.GitHubWebhookService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -64,13 +66,18 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("GitHub authentication successful", authResponse));
     }
 
+    /**
+     * FIXED: OAuth callback redirect endpoint using HttpServletResponse.sendRedirect()
+     * This is the endpoint that GitHub redirects to after user authorization
+     */
     @GetMapping("/oauth/callback")
-    public String handleOAuthCallbackRedirect(
+    public void handleOAuthCallbackRedirect(
             @RequestParam("code") String code,
             @RequestParam("state") String state,
             @RequestParam(value = "error", required = false) String error,
             @RequestParam(value = "error_description", required = false) String errorDescription,
-            HttpServletRequest request) {
+            HttpServletRequest request,
+            HttpServletResponse response) throws IOException {
 
         // Log the callback for debugging
         log.info("GitHub OAuth callback received: code={}, state={}, error={}",
@@ -99,46 +106,11 @@ public class GitHubController {
             callbackUrl.append("?").append(String.join("&", params));
         }
 
-        log.info("Redirecting to frontend callback URL: {}", callbackUrl.toString());
+        String finalRedirectUrl = callbackUrl.toString();
+        log.info("Redirecting to frontend callback URL: {}", finalRedirectUrl);
 
-        // Redirect to frontend callback page (this will be the popup window)
-        return "redirect:" + callbackUrl.toString();
-    }
-
-    /**
-     * Development endpoint to reset OAuth state for testing
-     * This clears local state and provides guidance for full reset
-     */
-    @PostMapping("/oauth/reset")
-    public ResponseEntity<ApiResponse<Map<String, String>>> resetOAuthForTesting(
-            @RequestParam Long projectId,
-            Authentication authentication) {
-
-        User user = (User) authentication.getPrincipal();
-
-        try {
-            // Clear any stored OAuth state for this user/project
-            // This would depend on how your OAuth service stores state
-            // If you have stored tokens or state, clear them here
-            // oauthService.clearStoredState(user.getId(), projectId);
-
-            log.info("Reset OAuth state for user {} and project {} for testing",
-                    user.getId(), projectId);
-
-            Map<String, String> response = Map.of(
-                    "message", "OAuth state cleared for testing",
-                    "note", "To fully reset, also revoke authorization at: https://github.com/settings/applications",
-                    "instructions", "1. Clear local state (done), 2. Revoke on GitHub, 3. Try OAuth again",
-                    "githubUrl", "https://github.com/settings/applications"
-            );
-
-            return ResponseEntity.ok(ApiResponse.success("OAuth state reset for development testing", response));
-
-        } catch (Exception e) {
-            log.error("Failed to reset OAuth state: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to reset OAuth state: " + e.getMessage()));
-        }
+        // FIXED: Use HttpServletResponse.sendRedirect() for proper HTTP redirect
+        response.sendRedirect(finalRedirectUrl);
     }
 
     @GetMapping("/repositories/search")
@@ -454,6 +426,42 @@ public class GitHubController {
 
         // This would reset connection errors and force resync
         return ResponseEntity.ok(ApiResponse.success("Connection reset successfully"));
+    }
+
+    /**
+     * Development endpoint to reset OAuth state for testing
+     * This clears local state and provides guidance for full reset
+     */
+    @PostMapping("/oauth/reset")
+    public ResponseEntity<ApiResponse<Map<String, String>>> resetOAuthForTesting(
+            @RequestParam Long projectId,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+
+        try {
+            // Clear any stored OAuth state for this user/project
+            // This would depend on how your OAuth service stores state
+            // If you have stored tokens or state, clear them here
+            // oauthService.clearStoredState(user.getId(), projectId);
+
+            log.info("Reset OAuth state for user {} and project {} for testing",
+                    user.getId(), projectId);
+
+            Map<String, String> response = Map.of(
+                    "message", "OAuth state cleared for testing",
+                    "note", "To fully reset, also revoke authorization at: https://github.com/settings/applications",
+                    "instructions", "1. Clear local state (done), 2. Revoke on GitHub, 3. Try OAuth again",
+                    "githubUrl", "https://github.com/settings/applications"
+            );
+
+            return ResponseEntity.ok(ApiResponse.success("OAuth state reset for development testing", response));
+
+        } catch (Exception e) {
+            log.error("Failed to reset OAuth state: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to reset OAuth state: " + e.getMessage()));
+        }
     }
 
     // Error handling
