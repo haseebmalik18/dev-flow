@@ -1,24 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { gitHubService } from "../services/githubService";
+import { gitHubService } from "../services/gitHubService";
 import type {
   CreateConnectionRequest,
   CreateTaskLinkRequest,
-} from "../services/githubService";
+} from "../services/gitHubService";
 import toast from "react-hot-toast";
 
-// OAuth Hooks
 export const useGitHubOAuth = () => {
   return useMutation({
     mutationFn: (projectId: number) => gitHubService.initiateOAuth(projectId),
-    onSuccess: (data) => {
-      if (data.data?.authorizationUrl) {
-        window.open(
-          data.data.authorizationUrl,
-          "_blank",
-          "width=600,height=700"
-        );
-      }
-    },
     onError: (error: any) => {
       const message =
         error.response?.data?.message || "Failed to initiate GitHub OAuth";
@@ -59,7 +49,7 @@ export const useSearchGitHubRepositories = (
       gitHubService.searchRepositories(accessToken, query, page, perPage),
     select: (data) => data.data,
     enabled: !!accessToken && !!query.trim() && query.length >= 2,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -73,18 +63,17 @@ export const useGitHubRepositoryInfo = (
     queryFn: () => gitHubService.getRepositoryInfo(accessToken, owner, repo),
     select: (data) => data.data,
     enabled: !!accessToken && !!owner && !!repo,
-    staleTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 10 * 60 * 1000,
   });
 };
 
-// Connection Hooks
 export const useProjectGitHubConnections = (projectId: number) => {
   return useQuery({
     queryKey: ["github", "connections", "project", projectId],
     queryFn: () => gitHubService.getProjectConnections(projectId),
     select: (data) => data.data,
     enabled: !!projectId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -94,7 +83,7 @@ export const useGitHubConnection = (connectionId: number) => {
     queryFn: () => gitHubService.getConnection(connectionId),
     select: (data) => data.data,
     enabled: !!connectionId,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 1 * 60 * 1000,
   });
 };
 
@@ -179,7 +168,6 @@ export const useSyncGitHubConnection = () => {
   });
 };
 
-// Commits Hooks
 export const useProjectGitHubCommits = (
   projectId: number,
   page = 0,
@@ -190,7 +178,7 @@ export const useProjectGitHubCommits = (
     queryFn: () => gitHubService.getProjectCommits(projectId, page, size),
     select: (data) => data.data,
     enabled: !!projectId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -200,7 +188,7 @@ export const useTaskGitHubCommits = (taskId: number) => {
     queryFn: () => gitHubService.getTaskCommits(taskId),
     select: (data) => data.data,
     enabled: !!taskId,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 1 * 60 * 1000,
   });
 };
 
@@ -233,7 +221,6 @@ export const useCreateCommitTaskLink = () => {
   });
 };
 
-// Pull Requests Hooks
 export const useProjectGitHubPullRequests = (
   projectId: number,
   page = 0,
@@ -244,7 +231,7 @@ export const useProjectGitHubPullRequests = (
     queryFn: () => gitHubService.getProjectPullRequests(projectId, page, size),
     select: (data) => data.data,
     enabled: !!projectId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -254,7 +241,7 @@ export const useTaskGitHubPullRequests = (taskId: number) => {
     queryFn: () => gitHubService.getTaskPullRequests(taskId),
     select: (data) => data.data,
     enabled: !!taskId,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 1 * 60 * 1000,
   });
 };
 
@@ -289,18 +276,16 @@ export const useCreatePRTaskLink = () => {
   });
 };
 
-// Statistics Hooks
 export const useProjectGitHubStatistics = (projectId: number) => {
   return useQuery({
     queryKey: ["github", "statistics", "project", projectId],
     queryFn: () => gitHubService.getProjectStatistics(projectId),
     select: (data) => data.data,
     enabled: !!projectId,
-    staleTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 10 * 60 * 1000,
   });
 };
 
-// Search Hooks
 export const useGitHubSearch = () => {
   return useMutation({
     mutationFn: (request: {
@@ -317,13 +302,12 @@ export const useGitHubSearch = () => {
   });
 };
 
-// Health Hook
 export const useGitHubHealth = () => {
   return useQuery({
     queryKey: ["github", "health"],
     queryFn: () => gitHubService.getHealth(),
     select: (data) => data.data,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 };

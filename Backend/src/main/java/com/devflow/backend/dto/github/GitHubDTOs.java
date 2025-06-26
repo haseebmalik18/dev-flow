@@ -1,4 +1,4 @@
-// GitHubDTOs.java
+
 package com.devflow.backend.dto.github;
 
 import com.devflow.backend.entity.*;
@@ -14,7 +14,7 @@ import java.util.List;
 
 public class GitHubDTOs {
 
-    // Connection DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -24,14 +24,14 @@ public class GitHubDTOs {
         private Long projectId;
 
         @NotBlank(message = "Repository full name is required")
-        private String repositoryFullName; // "owner/repo"
+        private String repositoryFullName;
 
         @NotBlank(message = "Repository URL is required")
         private String repositoryUrl;
 
         private Long repositoryId;
         private Long installationId;
-        private String accessToken; // Temporary, will be used to setup webhook
+        private String accessToken;
     }
 
     @Data
@@ -54,7 +54,6 @@ public class GitHubDTOs {
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
-        // Related data
         private ProjectSummary project;
         private UserSummary connectedBy;
         private ConnectionHealth health;
@@ -85,7 +84,7 @@ public class GitHubDTOs {
         private LocalDateTime lastCheck;
     }
 
-    // Commit DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -108,7 +107,7 @@ public class GitHubDTOs {
         private Integer changedFiles;
         private LocalDateTime createdAt;
 
-        // Related data
+
         private ConnectionSummary connection;
         private List<TaskLinkSummary> taskLinks;
         private Boolean isFromMainBranch;
@@ -131,7 +130,7 @@ public class GitHubDTOs {
         private Boolean isFromMainBranch;
     }
 
-    // Pull Request DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -163,7 +162,7 @@ public class GitHubDTOs {
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
-        // Related data
+
         private ConnectionSummary connection;
         private List<TaskLinkSummary> taskLinks;
         private Boolean isOpen;
@@ -191,7 +190,7 @@ public class GitHubDTOs {
         private Boolean isMerged;
     }
 
-    // Task Link DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -219,7 +218,7 @@ public class GitHubDTOs {
         private Boolean autoStatusUpdate;
     }
 
-    // Webhook DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -243,7 +242,7 @@ public class GitHubDTOs {
         private LocalDateTime processedAt;
     }
 
-    // Repository DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -277,7 +276,7 @@ public class GitHubDTOs {
         private Boolean hasMore;
     }
 
-    // Authentication DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -316,7 +315,7 @@ public class GitHubDTOs {
         private String type;
     }
 
-    // Statistics DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -381,7 +380,7 @@ public class GitHubDTOs {
         private Long resolves;
     }
 
-    // Common DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -426,14 +425,14 @@ public class GitHubDTOs {
         private Boolean isOverdue;
     }
 
-    // Search and Filter DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class GitHubSearchRequest {
         private String query;
-        private String type; // "commits", "prs", "repositories"
+        private String type;
         private Long projectId;
         private String author;
         private String branch;
@@ -457,7 +456,7 @@ public class GitHubDTOs {
         private Boolean hasMore;
     }
 
-    // Sync DTOs
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -468,7 +467,7 @@ public class GitHubDTOs {
 
         private Boolean fullSync;
         private LocalDateTime since;
-        private List<String> syncTypes; // "commits", "pullRequests", "taskLinks"
+        private List<String> syncTypes;
     }
 
     @Data

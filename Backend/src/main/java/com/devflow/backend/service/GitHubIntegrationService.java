@@ -1,4 +1,4 @@
-// GitHubIntegrationService.java
+
 package com.devflow.backend.service;
 
 import com.devflow.backend.dto.github.GitHubDTOs.*;
@@ -42,20 +42,20 @@ public class GitHubIntegrationService {
     public ConnectionResponse createConnection(CreateConnectionRequest request, User user) {
         Project project = findProjectWithAccess(request.getProjectId(), user);
 
-        // Check if connection already exists
+
         if (connectionRepository.existsActiveConnectionForProjectAndRepository(
                 project, request.getRepositoryFullName())) {
             throw new AuthException("Repository is already connected to this project");
         }
 
         try {
-            // Create webhook
+
             String webhookId = webhookService.createWebhook(
                     request.getRepositoryFullName(),
                     request.getAccessToken()
             );
 
-            // Create connection
+
             GitHubConnection connection = GitHubConnection.builder()
                     .project(project)
                     .repositoryFullName(request.getRepositoryFullName())
@@ -70,14 +70,14 @@ public class GitHubIntegrationService {
 
             connection = connectionRepository.save(connection);
 
-            // Create activity
+
             activityService.createProjectUpdatedActivity(
                     user,
                     project,
                     java.util.Map.of("githubConnection", "Repository " + request.getRepositoryFullName() + " connected")
             );
 
-            // Start initial sync asynchronously
+
             syncConnectionAsync(connection.getId());
 
             log.info("GitHub connection created: {} for project: {} by user: {}",
@@ -124,15 +124,12 @@ public class GitHubIntegrationService {
         }
 
         try {
-            // Remove webhook
             webhookService.deleteWebhook(connection.getRepositoryFullName(), connection.getWebhookId());
 
-            // Update status instead of deleting to preserve history
             connection.setStatus(GitHubConnectionStatus.DISCONNECTED);
             connection.setWebhookStatus(GitHubWebhookStatus.INACTIVE);
             connectionRepository.save(connection);
 
-            // Create activity
             activityService.createProjectUpdatedActivity(
                     user,
                     connection.getProject(),
@@ -262,12 +259,10 @@ public class GitHubIntegrationService {
 
         Task task = findTaskWithAccess(request.getTaskId(), user);
 
-        // Verify commit belongs to a project the user has access to
         if (!projectRepository.hasUserAccessToProject(user, commit.getGitHubConnection().getProject().getId())) {
             throw new AuthException("You don't have access to this commit");
         }
 
-        // Check if link already exists
         if (commitTaskLinkRepository.existsByGitHubCommitAndTask(commit, task)) {
             throw new AuthException("Link between commit and task already exists");
         }
@@ -281,7 +276,6 @@ public class GitHubIntegrationService {
 
         link = commitTaskLinkRepository.save(link);
 
-        // Handle status updates based on link type
         if (request.getLinkType() == GitHubLinkType.CLOSES ||
                 request.getLinkType() == GitHubLinkType.FIXES ||
                 request.getLinkType() == GitHubLinkType.RESOLVES) {
@@ -304,12 +298,10 @@ public class GitHubIntegrationService {
 
         Task task = findTaskWithAccess(request.getTaskId(), user);
 
-        // Verify PR belongs to a project the user has access to
         if (!projectRepository.hasUserAccessToProject(user, pullRequest.getGitHubConnection().getProject().getId())) {
             throw new AuthException("You don't have access to this pull request");
         }
 
-        // Check if link already exists
         if (prTaskLinkRepository.existsByGitHubPullRequestAndTask(pullRequest, task)) {
             throw new AuthException("Link between pull request and task already exists");
         }
@@ -324,7 +316,6 @@ public class GitHubIntegrationService {
 
         link = prTaskLinkRepository.save(link);
 
-        // Handle status updates
         if (link.getAutoStatusUpdate()) {
             updateTaskStatusFromPR(task, pullRequest, user);
         }
@@ -343,23 +334,20 @@ public class GitHubIntegrationService {
         Project project = findProjectWithAccess(projectId, user);
         LocalDateTime since = LocalDateTime.now().minusDays(30);
 
-        // Get connection statistics
         List<GitHubConnection> connections = connectionRepository.findByProjectOrderByCreatedAtDesc(project);
         ConnectionStatistics connectionStats = buildConnectionStatistics(connections);
 
-        // Get commit statistics  
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> commitStatsRaw = (java.util.Map<String, Object>)
                 commitRepository.getCommitStatistics(project, since);
         CommitStatistics commitStats = buildCommitStatistics(commitStatsRaw);
 
-        // Get PR statistics
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> prStatsRaw = (java.util.Map<String, Object>)
                 pullRequestRepository.getPRStatistics(project, since);
         PullRequestStatistics prStats = buildPRStatistics(prStatsRaw);
 
-        // Get task link statistics
+
         List<GitHubCommitTaskLink> commitLinks = commitTaskLinkRepository.findByProject(project);
         List<GitHubPRTaskLink> prLinks = prTaskLinkRepository.findByProject(project);
         TaskLinkStatistics linkStats = buildTaskLinkStatistics(commitLinks, prLinks);
@@ -372,7 +360,7 @@ public class GitHubIntegrationService {
                 .build();
     }
 
-    // Async methods
+
 
     @Async
     public void syncConnectionAsync(Long connectionId) {
@@ -388,7 +376,7 @@ public class GitHubIntegrationService {
         }
     }
 
-    // Private helper methods
+
 
     private Project findProjectWithAccess(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
@@ -463,7 +451,6 @@ public class GitHubIntegrationService {
         }
     }
 
-    // Mapping methods
 
     private ConnectionResponse mapToConnectionResponse(GitHubConnection connection) {
         return ConnectionResponse.builder()

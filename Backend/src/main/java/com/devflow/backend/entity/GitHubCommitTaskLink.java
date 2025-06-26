@@ -1,4 +1,4 @@
-// GitHubCommitTaskLink.java
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -40,7 +40,7 @@ public class GitHubCommitTaskLink {
     private GitHubLinkType linkType = GitHubLinkType.REFERENCE;
 
     @Column(name = "reference_text")
-    private String referenceText; // The actual text that created the link (e.g., "#123")
+    private String referenceText;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

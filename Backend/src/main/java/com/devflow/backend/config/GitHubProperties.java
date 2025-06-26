@@ -1,4 +1,4 @@
-// GitHubProperties.java
+
 package com.devflow.backend.config;
 
 import lombok.Data;
@@ -33,7 +33,7 @@ public class GitHubProperties {
         private Duration timeout = Duration.ofSeconds(30);
         private int maxRetries = 3;
         private Duration retryDelay = Duration.ofSeconds(1);
-        private int rateLimitBuffer = 100; // Keep this many requests in reserve
+        private int rateLimitBuffer = 100;
     }
 
     @Data

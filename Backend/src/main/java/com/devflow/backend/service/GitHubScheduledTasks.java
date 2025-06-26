@@ -1,4 +1,4 @@
-// GitHubScheduledTasks.java
+
 package com.devflow.backend.service;
 
 import com.devflow.backend.entity.GitHubConnection;
@@ -21,10 +21,8 @@ public class GitHubScheduledTasks {
     private final GitHubConnectionRepository connectionRepository;
     private final GitHubTaskLinkingService taskLinkingService;
 
-    /**
-     * Sync active connections every hour
-     */
-    @Scheduled(fixedRate = 3600000) // 1 hour
+
+    @Scheduled(fixedRate = 3600000)
     @Transactional
     public void syncActiveConnections() {
         log.info("Starting scheduled sync of active GitHub connections");
@@ -38,7 +36,7 @@ public class GitHubScheduledTasks {
 
             for (GitHubConnection connection : activeConnections) {
                 try {
-                    // Only sync if last sync was more than 1 hour ago
+
                     if (connection.getLastSyncAt() == null ||
                             connection.getLastSyncAt().isBefore(LocalDateTime.now().minusHours(1))) {
 
@@ -65,10 +63,8 @@ public class GitHubScheduledTasks {
         }
     }
 
-    /**
-     * Check for stale connections every 6 hours
-     */
-    @Scheduled(fixedRate = 21600000) // 6 hours
+
+    @Scheduled(fixedRate = 21600000)
     @Transactional
     public void checkStaleConnections() {
         log.info("Checking for stale GitHub connections");
@@ -94,10 +90,8 @@ public class GitHubScheduledTasks {
         }
     }
 
-    /**
-     * Clean up old disconnected connections daily
-     */
-    @Scheduled(cron = "0 2 0 * * ?") // 2 AM daily
+
+    @Scheduled(cron = "0 2 0 * * ?")
     @Transactional
     public void cleanupOldConnections() {
         log.info("Cleaning up old disconnected GitHub connections");
@@ -112,17 +106,15 @@ public class GitHubScheduledTasks {
         }
     }
 
-    /**
-     * Health check for all connections every 30 minutes
-     */
-    @Scheduled(fixedRate = 1800000) // 30 minutes
+
+    @Scheduled(fixedRate = 1800000)
     @Transactional(readOnly = true)
     public void healthCheckConnections() {
         try {
             LocalDateTime recentThreshold = LocalDateTime.now().minusHours(1);
             Object healthStats = connectionRepository.getHealthStatistics(recentThreshold);
 
-            // Log health statistics for monitoring
+
             log.debug("GitHub connections health check completed: {}", healthStats);
 
         } catch (Exception e) {

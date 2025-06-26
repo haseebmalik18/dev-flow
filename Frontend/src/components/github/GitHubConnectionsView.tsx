@@ -24,7 +24,7 @@ import {
   useDeleteGitHubConnection,
   useSyncGitHubConnection,
   useProjectGitHubStatistics,
-} from "../../hooks/useGitHub";
+} from "../../hooks/useGithub";
 import type { GitHubConnection } from "../../services/gitHubService";
 
 interface GitHubConnectionsViewProps {
@@ -151,7 +151,6 @@ export const GitHubConnectionsView: React.FC<GitHubConnectionsViewProps> = ({
   return (
     <>
       <div className="bg-white rounded-lg border border-gray-200">
-        {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -177,7 +176,6 @@ export const GitHubConnectionsView: React.FC<GitHubConnectionsViewProps> = ({
           </div>
         </div>
 
-        {/* Statistics */}
         {statistics && !isLoadingStats && (
           <div className="p-6 border-b border-gray-200 bg-gray-50">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -221,7 +219,6 @@ export const GitHubConnectionsView: React.FC<GitHubConnectionsViewProps> = ({
           </div>
         )}
 
-        {/* Connections List */}
         <div className="p-6">
           {connections && connections.length > 0 ? (
             <div className="space-y-4">

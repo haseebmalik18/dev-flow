@@ -583,10 +583,8 @@ class EnhancedWebSocketService {
       this.client.deactivate();
     }
 
-    // Log configuration for debugging
     logWebSocketConfig();
 
-    // Use the proper WebSocket URL from your config
     const wsUrl = getWebSocketUrl();
 
     console.log("🚀 Setting up WebSocket client with URL:", wsUrl);

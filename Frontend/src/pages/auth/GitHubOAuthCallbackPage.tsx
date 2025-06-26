@@ -1,4 +1,3 @@
-// GitHubOAuthCallbackPage.tsx - Updated for Backend-Processed OAuth Flow
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Loader2, CheckCircle, XCircle, Github } from "lucide-react";
@@ -13,7 +12,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
   useEffect(() => {
     const processCallback = () => {
       try {
-        // UPDATED: Get parameters from URL - these now come from backend processing
         const success = searchParams.get("success");
         const error = searchParams.get("error");
         const errorDescription = searchParams.get("error_description");
@@ -33,7 +31,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
         });
 
         if (error) {
-          // Handle OAuth error from backend
           const errorMsg =
             errorDescription || error || "Unknown error occurred";
           console.error("GitHub OAuth error:", errorMsg);
@@ -41,7 +38,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           setStatus("error");
           setMessage(`Authorization failed: ${errorMsg}`);
 
-          // Send error message to parent window
           if (window.opener) {
             window.opener.postMessage(
               {
@@ -54,7 +50,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
             );
           }
 
-          // Close popup after showing error briefly
           setTimeout(() => {
             window.close();
           }, 3000);
@@ -63,14 +58,12 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
         }
 
         if (success === "true") {
-          // SUCCESS: Backend already processed OAuth completely
           console.log(
             "GitHub OAuth success, backend already processed everything"
           );
 
           setStatus("success");
 
-          // Enhanced success message with user info
           let successMsg = messageParam || "Authorization successful!";
           if (githubUser) {
             successMsg += ` Connected as ${githubName || githubUser}.`;
@@ -82,7 +75,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
 
           setMessage(successMsg);
 
-          // Send success message to parent window with enhanced data
           if (window.opener) {
             window.opener.postMessage(
               {
@@ -91,21 +83,17 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
                 github_user: githubUser,
                 github_name: githubName,
                 repo_count: repoCount,
-                // Note: No code/state since backend processed everything
               },
               window.location.origin
             );
           }
 
-          // Close popup after brief delay
           setTimeout(() => {
             window.close();
-          }, 2000); // Slightly longer delay to show enhanced message
-
+          }, 2000);
           return;
         }
 
-        // LEGACY SUPPORT: Handle old flow with code/state (should not happen with new backend)
         const code = searchParams.get("code");
         const state = searchParams.get("state");
 
@@ -139,7 +127,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           return;
         }
 
-        // FALLBACK: No recognizable parameters
         console.error("No valid OAuth callback parameters found");
 
         setStatus("error");
@@ -168,7 +155,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           "An unexpected error occurred while processing the authorization"
         );
 
-        // Send error message to parent window
         if (window.opener) {
           window.opener.postMessage(
             {
@@ -182,20 +168,17 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           );
         }
 
-        // Close popup after showing error briefly
         setTimeout(() => {
           window.close();
         }, 3000);
       }
     };
 
-    // Small delay to ensure component is mounted
     const timer = setTimeout(processCallback, 100);
 
     return () => clearTimeout(timer);
   }, [searchParams]);
 
-  // Fallback: if window doesn't close automatically, provide manual close button
   useEffect(() => {
     const fallbackTimer = setTimeout(() => {
       if (status !== "processing") {
@@ -284,7 +267,6 @@ export const GitHubOAuthCallbackPage: React.FC = () => {
           If this window doesn't close automatically, you can close it manually.
         </div>
 
-        {/* Enhanced debug info in development */}
         {process.env.NODE_ENV === "development" && (
           <div className="mt-4 p-3 bg-gray-100 rounded-lg text-left">
             <h4 className="text-xs font-medium text-gray-700 mb-2">

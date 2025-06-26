@@ -1,4 +1,4 @@
-// GitHubPullRequest.java
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -124,16 +124,16 @@ public class GitHubPullRequest {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    // Helper methods
+
     public List<String> extractTaskReferences() {
         List<String> references = new ArrayList<>();
 
-        // Extract from title
+
         if (title != null) {
             references.addAll(extractReferencesFromText(title));
         }
 
-        // Extract from description
+
         if (description != null) {
             references.addAll(extractReferencesFromText(description));
         }

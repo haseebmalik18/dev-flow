@@ -1,4 +1,4 @@
-// GitHubCommit.java
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -53,7 +53,7 @@ public class GitHubCommit {
     private String authorEmail;
 
     @Column(name = "author_username")
-    private String authorUsername; // GitHub username
+    private String authorUsername;
 
     @Column(name = "committer_name")
     private String committerName;
@@ -88,12 +88,12 @@ public class GitHubCommit {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    // Helper methods
+
     public List<String> extractTaskReferences() {
         List<String> references = new ArrayList<>();
         if (commitMessage == null) return references;
 
-        // Common patterns: #123, TASK-123, DEV-123, etc.
+
         String[] patterns = {
                 "#(\\d+)",
                 "(?i)(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)",

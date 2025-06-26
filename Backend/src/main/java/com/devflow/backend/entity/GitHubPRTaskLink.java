@@ -1,4 +1,4 @@
-// GitHubPRTaskLink.java
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;

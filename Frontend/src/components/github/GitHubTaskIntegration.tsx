@@ -1,5 +1,3 @@
-// Fixed GitHubTaskIntegration.tsx
-
 import React, { useState, useCallback } from "react";
 import {
   Github,
@@ -52,7 +50,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
   const [isLinkingPR, setIsLinkingPR] = useState<number | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-  // CRITICAL FIX: Log values for debugging
   console.log("GitHubTaskIntegration props:", {
     taskId,
     taskTitle,
@@ -64,12 +61,10 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     projectIdValid: projectId && Number.isInteger(projectId) && projectId > 0,
   });
 
-  // CRITICAL FIX: Validate both taskId and projectId
   const isValidTask = taskId && Number.isInteger(taskId) && taskId > 0;
   const isValidProject =
     projectId && Number.isInteger(projectId) && projectId > 0;
 
-  // Check if project has GitHub connections - only if projectId is valid
   const {
     data: connections,
     isLoading: isLoadingConnections,
@@ -184,7 +179,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     [taskId, taskTitle, createPRLinkMutation, isValidTask]
   );
 
-  // CRITICAL FIX: Show error if invalid IDs
   if (!isValidTask || !isValidProject) {
     return (
       <div className="bg-white rounded-lg border border-gray-200">
@@ -223,7 +217,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     );
   }
 
-  // If checking connections and there's an error
   if (connectionsError) {
     return (
       <div className="bg-white rounded-lg border border-gray-200">
@@ -258,7 +251,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     );
   }
 
-  // If loading connections
   if (isLoadingConnections) {
     return (
       <div className="bg-white rounded-lg border border-gray-200">
@@ -290,12 +282,10 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     );
   }
 
-  // If no connections exist, show connection prompt
   if (!hasConnections) {
     return (
       <>
         <div className="bg-white rounded-lg border border-gray-200">
-          {/* Header */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
@@ -312,7 +302,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
             </div>
           </div>
 
-          {/* Connect Prompt */}
           <div className="p-6">
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -362,7 +351,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
     );
   }
 
-  // Original component logic for when connections exist
   const CommitCard: React.FC<{ commit: GitHubCommit }> = ({ commit }) => (
     <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
       <div className="flex items-start justify-between">
@@ -617,7 +605,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200">
-      {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -645,7 +632,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="flex space-x-8 px-4">
           {[
@@ -683,7 +669,6 @@ export const GitHubTaskIntegration: React.FC<GitHubTaskIntegrationProps> = ({
         </nav>
       </div>
 
-      {/* Content */}
       <div className="p-4">
         {activeTab === "commits" && (
           <div>

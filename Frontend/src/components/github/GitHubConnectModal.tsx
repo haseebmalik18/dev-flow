@@ -1,4 +1,3 @@
-// Fixed GitHubConnectModal.tsx - Prevent Double OAuth Requests
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   X,
@@ -23,7 +22,7 @@ import {
   useCreateGitHubConnection,
 } from "../../hooks/useGithub";
 import { api } from "../../config/api";
-import type { GitHubRepository } from "../../services/githubService";
+import type { GitHubRepository } from "../../services/gitHubService";
 
 interface GitHubConnectModalProps {
   isOpen: boolean;
@@ -32,7 +31,6 @@ interface GitHubConnectModalProps {
   projectName: string;
 }
 
-// Development Reset Component (unchanged)
 const DevGitHubReset: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [isResetting, setIsResetting] = useState(false);
   const [isClearingConnections, setIsClearingConnections] = useState(false);
@@ -198,7 +196,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [isOAuthInProgress, setIsOAuthInProgress] = useState(false);
 
-  // CRITICAL FIX: Prevent duplicate OAuth requests
   const oauthInProgressRef = useRef(false);
   const hasProcessedCallbackRef = useRef(false);
   const popupWindowRef = useRef<Window | null>(null);
@@ -212,7 +209,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     error: searchError,
   } = useSearchGitHubRepositories(accessToken, searchQuery, 1, 50);
 
-  // Validate projectId
   useEffect(() => {
     if (isOpen && (!projectId || isNaN(projectId) || projectId <= 0)) {
       console.error(
@@ -224,30 +220,26 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     }
   }, [isOpen, projectId, onClose]);
 
-  // FIXED: Enhanced OAuth callback handler with duplicate prevention
   useEffect(() => {
     if (!isOpen) return;
 
     const handleMessage = (event: MessageEvent) => {
-      // Verify origin for security
       if (event.origin !== window.location.origin) {
         console.warn("Received message from unexpected origin:", event.origin);
         return;
       }
 
-      // CRITICAL FIX: Prevent processing duplicate callbacks
       if (hasProcessedCallbackRef.current) {
-        console.log("Ignoring duplicate OAuth callback message");
+        console.log("🛡️ Ignoring duplicate OAuth callback message");
         return;
       }
 
-      console.log("Received OAuth message:", event.data);
+      console.log("📨 Received OAuth message:", event.data);
 
       if (event.data.type === "GITHUB_OAUTH_SUCCESS") {
-        // Mark as processed immediately
         hasProcessedCallbackRef.current = true;
 
-        console.log("OAuth completed successfully by backend");
+        console.log("✅ OAuth completed successfully by backend");
 
         const { github_user, github_name, message } = event.data;
 
@@ -261,42 +253,30 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           setAccessToken("backend_processed");
           setStep("search");
           setOauthError(null);
-          setIsOAuthInProgress(false);
-          oauthInProgressRef.current = false;
+          resetOAuthState();
 
-          console.log("GitHub user connected:", github_user);
+          console.log("👤 GitHub user connected:", github_user);
         } else {
           setStep("search");
           setOauthError(null);
-          setIsOAuthInProgress(false);
-          oauthInProgressRef.current = false;
+          resetOAuthState();
         }
 
-        // Close popup if still open
-        if (popupWindowRef.current && !popupWindowRef.current.closed) {
-          popupWindowRef.current.close();
-          popupWindowRef.current = null;
-        }
+        closePopupSafely();
       }
 
       if (event.data.type === "GITHUB_OAUTH_ERROR") {
-        // Mark as processed to prevent duplicate error handling
         hasProcessedCallbackRef.current = true;
 
-        console.error("GitHub OAuth error:", event.data);
+        console.error("❌ GitHub OAuth error:", event.data);
         const errorMessage =
           event.data.description ||
           event.data.error ||
           "Unknown error occurred";
         setOauthError(`GitHub authorization failed: ${errorMessage}`);
-        setIsOAuthInProgress(false);
-        oauthInProgressRef.current = false;
+        resetOAuthState();
 
-        // Close popup if still open
-        if (popupWindowRef.current && !popupWindowRef.current.closed) {
-          popupWindowRef.current.close();
-          popupWindowRef.current = null;
-        }
+        closePopupSafely();
       }
     };
 
@@ -304,159 +284,163 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     return () => window.removeEventListener("message", handleMessage);
   }, [isOpen]);
 
-  // CRITICAL FIX: Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
-      // Reset all state
+      console.log("🔄 Resetting OAuth modal state");
+
       setStep("oauth");
       setAccessToken("");
       setSearchQuery("");
       setSelectedRepo(null);
       setGithubUserInfo(null);
       setOauthError(null);
-      setIsOAuthInProgress(false);
 
-      // Reset refs to allow new OAuth flows
-      oauthInProgressRef.current = false;
+      resetOAuthState();
       hasProcessedCallbackRef.current = false;
 
-      // Close any open popup
-      if (popupWindowRef.current && !popupWindowRef.current.closed) {
-        popupWindowRef.current.close();
-        popupWindowRef.current = null;
-      }
+      closePopupSafely();
     }
   }, [isOpen]);
 
-  // CRITICAL FIX: Enhanced OAuth handler with duplicate prevention
-  const handleStartOAuth = useCallback(() => {
-    // PREVENT DUPLICATE REQUESTS
-    if (oauthInProgressRef.current || isOAuthInProgress) {
-      console.log("OAuth already in progress, ignoring duplicate request");
-      return;
-    }
+  const handleStartOAuth = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Validate projectId
-    if (!projectId || isNaN(projectId) || projectId <= 0) {
-      console.error("Cannot start OAuth: invalid projectId", projectId);
-      setOauthError(
-        "Invalid project ID. Please refresh the page and try again."
+      if (oauthInProgressRef.current || isOAuthInProgress) {
+        console.log(
+          "🛑 OAuth already in progress - blocking duplicate execution (StrictMode safe)"
+        );
+        return;
+      }
+
+      if (!projectId || isNaN(projectId) || projectId <= 0) {
+        console.error("Cannot start OAuth: invalid projectId", projectId);
+        setOauthError(
+          "Invalid project ID. Please refresh the page and try again."
+        );
+        return;
+      }
+
+      if (gitHubOAuthMutation.isPending) {
+        console.log("🛑 OAuth mutation already pending - blocking duplicate");
+        return;
+      }
+
+      oauthInProgressRef.current = true;
+      setIsOAuthInProgress(true);
+      setOauthError(null);
+      hasProcessedCallbackRef.current = false;
+
+      console.log(
+        "🚀 Starting OAuth for projectId:",
+        projectId,
+        "(StrictMode safe)"
       );
-      return;
-    }
 
-    // Mark as in progress immediately
-    oauthInProgressRef.current = true;
-    setIsOAuthInProgress(true);
-    setOauthError(null);
-    hasProcessedCallbackRef.current = false; // Reset callback processing flag
-
-    console.log("Starting OAuth for projectId:", projectId);
-
-    gitHubOAuthMutation.mutate(projectId, {
-      onSuccess: (response) => {
-        if (response.data?.authorizationUrl) {
-          console.log(
-            "Opening OAuth popup with URL:",
-            response.data.authorizationUrl
-          );
-
-          // Store current location for redirect after OAuth
-          sessionStorage.setItem(
-            "github_oauth_redirect",
-            window.location.pathname
-          );
-
-          // Close any existing popup first
-          if (popupWindowRef.current && !popupWindowRef.current.closed) {
-            popupWindowRef.current.close();
-          }
-
-          // Open popup window
-          const popup = window.open(
-            response.data.authorizationUrl,
-            "github-oauth",
-            "width=600,height=700,scrollbars=yes,resizable=yes,status=yes,location=yes"
-          );
-
-          if (!popup) {
-            setOauthError(
-              "Please allow popups for this site to connect with GitHub."
+      gitHubOAuthMutation.mutate(projectId, {
+        onSuccess: (response) => {
+          if (response.data?.authorizationUrl) {
+            console.log(
+              "✅ OAuth URL generated:",
+              response.data.authorizationUrl
             );
-            setIsOAuthInProgress(false);
-            oauthInProgressRef.current = false;
-            return;
+
+            sessionStorage.setItem(
+              "github_oauth_redirect",
+              window.location.pathname
+            );
+
+            closePopupSafely();
+
+            const popup = window.open(
+              response.data.authorizationUrl,
+              "github-oauth",
+              "width=600,height=700,scrollbars=yes,resizable=yes,status=yes,location=yes"
+            );
+
+            if (!popup) {
+              console.error("❌ Popup blocked");
+              setOauthError(
+                "Please allow popups for this site to connect with GitHub."
+              );
+              resetOAuthState();
+              return;
+            }
+
+            popupWindowRef.current = popup;
+            popup.focus();
+
+            const checkClosed = setInterval(() => {
+              if (popup.closed) {
+                clearInterval(checkClosed);
+                console.log("🔌 OAuth popup closed manually");
+
+                if (!hasProcessedCallbackRef.current) {
+                  resetOAuthState();
+                }
+
+                popupWindowRef.current = null;
+              }
+            }, 1000);
+
+            const timeout = setTimeout(() => {
+              if (!popup.closed) {
+                popup.close();
+                clearInterval(checkClosed);
+                console.log("⏰ OAuth popup timed out");
+
+                if (!hasProcessedCallbackRef.current) {
+                  setOauthError("OAuth process timed out. Please try again.");
+                  resetOAuthState();
+                }
+
+                popupWindowRef.current = null;
+              }
+            }, 5 * 60 * 1000);
+
+            const enhancedCheckClosed = setInterval(() => {
+              if (popup.closed) {
+                clearInterval(enhancedCheckClosed);
+                clearTimeout(timeout);
+
+                if (!hasProcessedCallbackRef.current) {
+                  resetOAuthState();
+                }
+              }
+            }, 1000);
+          } else {
+            console.error("❌ No authorization URL received");
+            setOauthError("Failed to get authorization URL from server");
+            resetOAuthState();
           }
+        },
+        onError: (error: any) => {
+          console.error("❌ OAuth initiation failed:", error);
+          const errorMessage =
+            error.response?.data?.message ||
+            error.message ||
+            "Unknown error occurred";
+          setOauthError(`Failed to initiate GitHub OAuth: ${errorMessage}`);
+          resetOAuthState();
+        },
+      });
+    },
+    [gitHubOAuthMutation, projectId, isOAuthInProgress]
+  );
 
-          // Store popup reference
-          popupWindowRef.current = popup;
-          popup.focus();
+  const resetOAuthState = useCallback(() => {
+    setIsOAuthInProgress(false);
+    oauthInProgressRef.current = false;
+  }, []);
 
-          // Check if popup was closed manually
-          const checkClosed = setInterval(() => {
-            if (popup.closed) {
-              clearInterval(checkClosed);
-              console.log("OAuth popup was closed manually");
-
-              // Only reset state if callback wasn't processed
-              if (!hasProcessedCallbackRef.current) {
-                setIsOAuthInProgress(false);
-                oauthInProgressRef.current = false;
-              }
-
-              popupWindowRef.current = null;
-            }
-          }, 1000);
-
-          // Set a timeout to close popup if it takes too long (5 minutes)
-          const timeout = setTimeout(() => {
-            if (!popup.closed) {
-              popup.close();
-              clearInterval(checkClosed);
-              console.log("OAuth popup timed out");
-
-              // Only show error if callback wasn't processed
-              if (!hasProcessedCallbackRef.current) {
-                setOauthError("OAuth process timed out. Please try again.");
-                setIsOAuthInProgress(false);
-                oauthInProgressRef.current = false;
-              }
-
-              popupWindowRef.current = null;
-            }
-          }, 5 * 60 * 1000);
-
-          // Clean up timeout if popup closes normally
-          const enhancedCheckClosed = setInterval(() => {
-            if (popup.closed) {
-              clearInterval(enhancedCheckClosed);
-              clearTimeout(timeout);
-
-              // Only reset state if callback wasn't processed
-              if (!hasProcessedCallbackRef.current) {
-                setIsOAuthInProgress(false);
-                oauthInProgressRef.current = false;
-              }
-            }
-          }, 1000);
-        } else {
-          setOauthError("Failed to get authorization URL from server");
-          setIsOAuthInProgress(false);
-          oauthInProgressRef.current = false;
-        }
-      },
-      onError: (error: any) => {
-        console.error("Failed to initiate OAuth:", error);
-        const errorMessage =
-          error.response?.data?.message ||
-          error.message ||
-          "Unknown error occurred";
-        setOauthError(`Failed to initiate GitHub OAuth: ${errorMessage}`);
-        setIsOAuthInProgress(false);
-        oauthInProgressRef.current = false;
-      },
-    });
-  }, [gitHubOAuthMutation, projectId, isOAuthInProgress]);
+  const closePopupSafely = useCallback(() => {
+    if (popupWindowRef.current && !popupWindowRef.current.closed) {
+      console.log("🔄 Closing existing popup");
+      popupWindowRef.current.close();
+      popupWindowRef.current = null;
+    }
+  }, []);
 
   const handleSelectRepository = useCallback((repo: GitHubRepository) => {
     setSelectedRepo(repo);
@@ -483,15 +467,13 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     createConnectionMutation.mutate(connectionData, {
       onSuccess: () => {
         onClose();
-        // Reset state
         setStep("oauth");
         setAccessToken("");
         setSearchQuery("");
         setSelectedRepo(null);
         setGithubUserInfo(null);
         setOauthError(null);
-        setIsOAuthInProgress(false);
-        oauthInProgressRef.current = false;
+        resetOAuthState();
         hasProcessedCallbackRef.current = false;
       },
       onError: (error: any) => {
@@ -503,7 +485,14 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
         alert(`Failed to connect repository: ${errorMessage}`);
       },
     });
-  }, [selectedRepo, projectId, accessToken, createConnectionMutation, onClose]);
+  }, [
+    selectedRepo,
+    projectId,
+    accessToken,
+    createConnectionMutation,
+    onClose,
+    resetOAuthState,
+  ]);
 
   const handleBackToSearch = useCallback(() => {
     setStep("search");
@@ -517,24 +506,17 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     setSelectedRepo(null);
     setGithubUserInfo(null);
     setOauthError(null);
-    setIsOAuthInProgress(false);
-    oauthInProgressRef.current = false;
+    resetOAuthState();
     hasProcessedCallbackRef.current = false;
-
-    // Close any open popup
-    if (popupWindowRef.current && !popupWindowRef.current.closed) {
-      popupWindowRef.current.close();
-      popupWindowRef.current = null;
-    }
-  }, []);
+    closePopupSafely();
+  }, [resetOAuthState, closePopupSafely]);
 
   const handleRetryOAuth = useCallback(() => {
     setOauthError(null);
-    setIsOAuthInProgress(false);
-    oauthInProgressRef.current = false;
+    resetOAuthState();
     hasProcessedCallbackRef.current = false;
-    handleStartOAuth();
-  }, [handleStartOAuth]);
+    handleStartOAuth({} as React.MouseEvent);
+  }, [handleStartOAuth, resetOAuthState]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -544,7 +526,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     });
   };
 
-  // Don't render if projectId is invalid
   if (!isOpen || !projectId || isNaN(projectId) || projectId <= 0) {
     return null;
   }
@@ -552,7 +533,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   return (
     <div className="fixed inset-0 bg-gray-900/60 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gray-900 rounded-lg flex items-center justify-center">
@@ -575,9 +555,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6">
-          {/* Error Display */}
           {oauthError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-start space-x-3">
@@ -598,10 +576,8 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             </div>
           )}
 
-          {/* Development Reset Tools */}
           <DevGitHubReset projectId={projectId} />
 
-          {/* Step 1: OAuth */}
           {step === "oauth" && (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -619,19 +595,22 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
               <Button
                 onClick={handleStartOAuth}
                 loading={gitHubOAuthMutation.isPending || isOAuthInProgress}
-                icon={<Github className="w-5 h-5" />}
+                icon={<Github className="w-5 h-5 pointer-events-none" />}
                 className="bg-gray-900 hover:bg-gray-800"
                 disabled={
                   !projectId ||
                   isNaN(projectId) ||
                   projectId <= 0 ||
                   isOAuthInProgress ||
-                  oauthInProgressRef.current
+                  oauthInProgressRef.current ||
+                  gitHubOAuthMutation.isPending
                 }
               >
-                {isOAuthInProgress
-                  ? "Opening GitHub..."
-                  : "Authorize GitHub Access"}
+                <span className="pointer-events-none">
+                  {isOAuthInProgress || gitHubOAuthMutation.isPending
+                    ? "Opening GitHub..."
+                    : "Authorize GitHub Access"}
+                </span>
               </Button>
 
               <div className="mt-6 text-sm text-gray-500">
@@ -639,7 +618,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 <p className="mt-1">
                   We only request the minimum permissions needed.
                 </p>
-                {isOAuthInProgress && (
+                {(isOAuthInProgress || gitHubOAuthMutation.isPending) && (
                   <p className="mt-2 text-blue-600 font-medium">
                     Please complete the authorization in the popup window.
                   </p>
@@ -648,7 +627,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             </div>
           )}
 
-          {/* Step 2: Search Repositories */}
           {step === "search" && (
             <div className="space-y-4">
               {githubUserInfo && (
@@ -724,7 +702,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             </div>
           )}
 
-          {/* Step 3: Confirm Connection */}
           {step === "connect" && selectedRepo && (
             <div className="space-y-6">
               <div className="text-center">
@@ -853,7 +830,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           )}
         </div>
 
-        {/* Loading overlay */}
         {gitHubOAuthMutation.isPending && (
           <div className="absolute inset-0 bg-white/90 flex items-center justify-center">
             <div className="text-center">

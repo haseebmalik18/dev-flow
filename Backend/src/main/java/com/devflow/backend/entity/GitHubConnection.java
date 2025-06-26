@@ -1,4 +1,4 @@
-// GitHubConnection.java
+
 package com.devflow.backend.entity;
 
 import jakarta.persistence.*;
@@ -35,18 +35,18 @@ public class GitHubConnection {
 
     @NotBlank
     @Column(name = "repository_full_name", nullable = false)
-    private String repositoryFullName; // "owner/repo"
+    private String repositoryFullName;
 
     @NotBlank
     @Column(name = "repository_url", nullable = false)
     private String repositoryUrl;
 
     @Column(name = "repository_id")
-    private Long repositoryId; // GitHub's internal repo ID
+    private Long repositoryId;
 
     @NotBlank
     @Column(name = "webhook_id")
-    private String webhookId; // GitHub webhook ID
+    private String webhookId;
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
@@ -62,7 +62,7 @@ public class GitHubConnection {
     private String webhookSecret;
 
     @Column(name = "installation_id")
-    private Long installationId; // GitHub App installation ID
+    private Long installationId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connected_by_id", nullable = false)
@@ -98,7 +98,7 @@ public class GitHubConnection {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    // Helper methods
+
     public void recordWebhookReceived() {
         this.lastWebhookAt = LocalDateTime.now();
         this.errorCount = 0;

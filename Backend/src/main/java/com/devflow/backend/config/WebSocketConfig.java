@@ -43,7 +43,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Value("${app.ngrok-frontend-url}")
     private String ngrokFrontendUrl;
 
-    // Track authenticated sessions by user
+
     private final Map<String, String> sessionToUsernameMap = new ConcurrentHashMap<>();
 
     @Override
@@ -88,11 +88,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     } else if (StompCommand.SEND.equals(accessor.getCommand()) ||
                             StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
 
-                        // Check if session is already authenticated
+
                         if (accessor.getUser() == null) {
                             String username = sessionToUsernameMap.get(sessionId);
                             if (username != null) {
-                                // Re-authenticate from stored session
+
                                 try {
                                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
                                     UsernamePasswordAuthenticationToken authToken =
@@ -141,7 +141,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             if (token != null && !token.trim().isEmpty()) {
                 String username = authenticateWithToken(token, accessor);
                 if (username != null) {
-                    // Store session-to-username mapping
+
                     sessionToUsernameMap.put(sessionId, username);
                     log.info("✅ WebSocket connection authenticated for user: {} (session: {})", username, sessionId);
                 } else {

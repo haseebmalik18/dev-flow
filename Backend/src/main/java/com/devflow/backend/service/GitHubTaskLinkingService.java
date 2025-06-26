@@ -1,4 +1,4 @@
-// GitHubTaskLinkingService.java
+
 package com.devflow.backend.service;
 
 import com.devflow.backend.dto.github.GitHubDTOs.*;
@@ -33,7 +33,7 @@ public class GitHubTaskLinkingService {
     private final TaskRepository taskRepository;
     private final ActivityService activityService;
 
-    // Regex patterns for task references
+
     private static final List<TaskReferencePattern> TASK_PATTERNS = List.of(
             new TaskReferencePattern(Pattern.compile("#(\\d+)"), GitHubLinkType.REFERENCE, 1),
             new TaskReferencePattern(Pattern.compile("(?i)(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.REFERENCE, 2),
@@ -59,9 +59,7 @@ public class GitHubTaskLinkingService {
         String referenceText;
     }
 
-    /**
-     * Link commit to tasks based on commit message
-     */
+
     public void linkCommitToTasks(GitHubCommit commit) {
         try {
             List<TaskReference> references = extractTaskReferences(commit.getCommitMessage());
@@ -72,7 +70,7 @@ public class GitHubTaskLinkingService {
                 if (taskOpt.isPresent()) {
                     Task task = taskOpt.get();
 
-                    // Check if link already exists
+
                     if (!commitTaskLinkRepository.existsByGitHubCommitAndTask(commit, task)) {
                         GitHubCommitTaskLink link = GitHubCommitTaskLink.builder()
                                 .gitHubCommit(commit)
@@ -83,10 +81,10 @@ public class GitHubTaskLinkingService {
 
                         commitTaskLinkRepository.save(link);
 
-                        // Update task status if needed
+
                         updateTaskStatusFromCommit(task, commit, reference.linkType);
 
-                        // Create activity
+
                         createCommitLinkActivity(commit, task, reference.linkType);
 
                         log.info("Linked commit {} to task {} ({})",
@@ -100,17 +98,13 @@ public class GitHubTaskLinkingService {
         }
     }
 
-    /**
-     * Link pull request to tasks based on title and description
-     */
     public void linkPullRequestToTasks(GitHubPullRequest pullRequest) {
         try {
             List<TaskReference> references = new ArrayList<>();
 
-            // Extract from title
             references.addAll(extractTaskReferences(pullRequest.getTitle()));
 
-            // Extract from description
+
             if (pullRequest.getDescription() != null) {
                 references.addAll(extractTaskReferences(pullRequest.getDescription()));
             }
@@ -121,7 +115,7 @@ public class GitHubTaskLinkingService {
                 if (taskOpt.isPresent()) {
                     Task task = taskOpt.get();
 
-                    // Check if link already exists
+
                     if (!prTaskLinkRepository.existsByGitHubPullRequestAndTask(pullRequest, task)) {
                         GitHubPRTaskLink link = GitHubPRTaskLink.builder()
                                 .gitHubPullRequest(pullRequest)
@@ -133,10 +127,10 @@ public class GitHubTaskLinkingService {
 
                         prTaskLinkRepository.save(link);
 
-                        // Update task status based on PR status
+
                         updateTaskStatusFromPR(task, pullRequest, reference.linkType);
 
-                        // Create activity
+
                         createPRLinkActivity(pullRequest, task, reference.linkType);
 
                         log.info("Linked PR #{} to task {} ({})",
@@ -150,9 +144,6 @@ public class GitHubTaskLinkingService {
         }
     }
 
-    /**
-     * Update task status when PR status changes
-     */
     public void updateTaskStatusFromPR(GitHubPullRequest pullRequest) {
         try {
             List<GitHubPRTaskLink> links = prTaskLinkRepository.findByGitHubPullRequest(pullRequest);
@@ -168,9 +159,7 @@ public class GitHubTaskLinkingService {
         }
     }
 
-    /**
-     * Sync connection - process commits and PRs for task linking
-     */
+
     public SyncResults syncConnection(GitHubConnection connection) {
         LocalDateTime since = connection.getLastSyncAt() != null ?
                 connection.getLastSyncAt() : LocalDateTime.now().minusDays(30);
@@ -185,7 +174,7 @@ public class GitHubTaskLinkingService {
                 .build();
 
         try {
-            // Process commits needing linking
+
             List<GitHubCommit> commits = commitRepository.findCommitsNeedingTaskLinking(connection, since);
             for (GitHubCommit commit : commits) {
                 try {
@@ -196,7 +185,7 @@ public class GitHubTaskLinkingService {
                 }
             }
 
-            // Process PRs needing linking
+
             List<GitHubPullRequest> pullRequests = pullRequestRepository.findPRsNeedingTaskLinking(connection, since);
             for (GitHubPullRequest pr : pullRequests) {
                 try {
@@ -218,9 +207,7 @@ public class GitHubTaskLinkingService {
         return results;
     }
 
-    /**
-     * Search GitHub content
-     */
+
     @Transactional(readOnly = true)
     public GitHubSearchResponse search(GitHubSearchRequest request) {
         try {
@@ -246,7 +233,7 @@ public class GitHubTaskLinkingService {
         }
     }
 
-    // Private helper methods
+
 
     private List<TaskReference> extractTaskReferences(String text) {
         List<TaskReference> references = new ArrayList<>();
@@ -282,7 +269,6 @@ public class GitHubTaskLinkingService {
     }
 
     private void updateTaskStatusFromCommit(Task task, GitHubCommit commit, GitHubLinkType linkType) {
-        // Only update status for certain link types and if commit is from main branch
         if (!commit.isFromMainBranch()) {
             return;
         }
@@ -318,8 +304,8 @@ public class GitHubTaskLinkingService {
             taskRepository.save(task);
 
             // Create activity (using commit author as user - this is a limitation)
-            // In a real implementation, you might want to map GitHub users to DevFlow users
-            User systemUser = task.getCreator(); // Fallback to task creator
+            // In a real implementation, might want to map GitHub users to DevFlow users
+            User systemUser = task.getCreator();
             activityService.createTaskStatusChangedActivity(systemUser, task, oldStatus, newStatus);
 
             if (shouldComplete) {
@@ -332,7 +318,7 @@ public class GitHubTaskLinkingService {
         TaskStatus newStatus = null;
         boolean shouldComplete = false;
 
-        // Determine new status based on PR status and link type
+
         switch (pullRequest.getStatus()) {
             case OPEN:
                 if (pullRequest.isDraft()) {
@@ -348,7 +334,7 @@ public class GitHubTaskLinkingService {
 
             case CLOSED:
                 if (pullRequest.isMerged()) {
-                    // Only complete task if PR was meant to close it
+
                     if (linkType == GitHubLinkType.CLOSES ||
                             linkType == GitHubLinkType.FIXES ||
                             linkType == GitHubLinkType.RESOLVES) {
@@ -358,7 +344,7 @@ public class GitHubTaskLinkingService {
                         }
                     }
                 } else {
-                    // PR was closed without merging
+
                     if (task.getStatus() == TaskStatus.REVIEW) {
                         newStatus = TaskStatus.IN_PROGRESS;
                     }
@@ -377,7 +363,7 @@ public class GitHubTaskLinkingService {
 
             taskRepository.save(task);
 
-            // Create activity (using task creator as fallback)
+
             User systemUser = task.getCreator();
             activityService.createTaskStatusChangedActivity(systemUser, task, oldStatus, newStatus);
 
@@ -397,12 +383,12 @@ public class GitHubTaskLinkingService {
             Activity activity = Activity.builder()
                     .type(ActivityType.TASK_UPDATED)
                     .description(description)
-                    .user(task.getCreator()) // Fallback user
+                    .user(task.getCreator())
                     .project(task.getProject())
                     .task(task)
                     .build();
 
-            // Note: This would typically go through ActivityService, but we're keeping it simple
+            // Note: possibly go through ActivityService
 
         } catch (Exception e) {
             log.warn("Failed to create commit link activity: {}", e.getMessage());
@@ -419,12 +405,12 @@ public class GitHubTaskLinkingService {
             Activity activity = Activity.builder()
                     .type(ActivityType.TASK_UPDATED)
                     .description(description)
-                    .user(task.getCreator()) // Fallback user
+                    .user(task.getCreator())
                     .project(task.getProject())
                     .task(task)
                     .build();
 
-            // Note: This would typically go through ActivityService
+            // Note: possibly go through ActivityService
 
         } catch (Exception e) {
             log.warn("Failed to create PR link activity: {}", e.getMessage());
@@ -447,7 +433,7 @@ public class GitHubTaskLinkingService {
         } else if (project != null) {
             commits = commitRepository.findByProjectOrderByCommitDateDesc(project, pageable);
         } else {
-            // Return empty results if no project specified
+
             commits = Page.empty(pageable);
         }
 
@@ -468,7 +454,7 @@ public class GitHubTaskLinkingService {
     private GitHubSearchResponse searchPullRequests(GitHubSearchRequest request) {
         Project project = null;
         if (request.getProjectId() != null) {
-            // This would need to be validated in the calling service
+
         }
 
         int page = request.getPage() != null ? request.getPage() : 0;
@@ -481,7 +467,7 @@ public class GitHubTaskLinkingService {
         } else if (project != null) {
             pullRequests = pullRequestRepository.findByProjectOrderByCreatedDateDesc(project, pageable);
         } else {
-            // Return empty results if no project specified
+
             pullRequests = Page.empty(pageable);
         }
 
@@ -499,7 +485,7 @@ public class GitHubTaskLinkingService {
                 .build();
     }
 
-    // Mapping methods
+
 
     private CommitSummary mapToCommitSummary(GitHubCommit commit) {
         return CommitSummary.builder()

@@ -1,4 +1,4 @@
-// GitHubController.java - Complete Fixed Version with Single OAuth Flow
+
 package com.devflow.backend.controller;
 
 import com.devflow.backend.dto.common.ApiResponse;
@@ -36,7 +36,6 @@ public class GitHubController {
     private final GitHubOAuthService oauthService;
     private final GitHubWebhookService webhookService;
 
-    // OAuth endpoints
 
     @PostMapping("/oauth/authorize")
     public ResponseEntity<ApiResponse<Map<String, String>>> initiateOAuth(
@@ -54,10 +53,6 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("GitHub authorization URL generated", response));
     }
 
-    /**
-     * FIXED: Single OAuth callback endpoint that processes everything
-     * This handles the GitHub redirect and processes the OAuth flow completely
-     */
     @GetMapping("/oauth/callback")
     public void handleOAuthCallbackRedirect(
             @RequestParam(value = "code", required = false) String code,
@@ -75,7 +70,6 @@ public class GitHubController {
 
         try {
             if (error != null) {
-                // Handle OAuth error from GitHub
                 log.warn("GitHub OAuth error: {} - {}", error, errorDescription);
 
                 List<String> params = new ArrayList<>();
@@ -86,28 +80,22 @@ public class GitHubController {
                 callbackUrl.append("?").append(String.join("&", params));
 
             } else if (code != null && state != null) {
-                // SUCCESS CASE: Process OAuth in backend completely
                 log.info("Processing OAuth callback with code and state");
 
-                // Create the OAuth request object (reusing existing DTO)
                 GitHubAuthRequest authRequest = new GitHubAuthRequest();
                 authRequest.setCode(code);
                 authRequest.setState(state);
 
-                // Process the OAuth callback using existing service method
                 String userAgent = request.getHeader("User-Agent");
                 GitHubAuthResponse authResponse = oauthService.handleOAuthCallback(authRequest, userAgent);
 
-                // SUCCESS: OAuth processed successfully
                 log.info("OAuth processed successfully for GitHub user: {}",
                         authResponse.getUserInfo() != null ? authResponse.getUserInfo().getLogin() : "unknown");
 
-                // Pass success data to frontend
                 List<String> params = new ArrayList<>();
                 params.add("success=true");
                 params.add("message=" + URLEncoder.encode("GitHub connected successfully!", StandardCharsets.UTF_8));
 
-                // Include GitHub user info for display
                 if (authResponse.getUserInfo() != null) {
                     params.add("github_user=" + URLEncoder.encode(authResponse.getUserInfo().getLogin(), StandardCharsets.UTF_8));
                     if (authResponse.getUserInfo().getName() != null) {
@@ -115,7 +103,6 @@ public class GitHubController {
                     }
                 }
 
-                // Include repository count for display
                 if (authResponse.getAccessibleRepositories() != null) {
                     params.add("repo_count=" + authResponse.getAccessibleRepositories().size());
                 }
@@ -123,7 +110,6 @@ public class GitHubController {
                 callbackUrl.append("?").append(String.join("&", params));
 
             } else {
-                // Missing required parameters
                 log.warn("OAuth callback missing required parameters: code={}, state={}", code, state);
 
                 List<String> params = List.of(
@@ -136,7 +122,6 @@ public class GitHubController {
         } catch (Exception e) {
             log.error("Failed to process OAuth callback: {}", e.getMessage(), e);
 
-            // Pass detailed error info to frontend for better debugging
             List<String> params = new ArrayList<>();
             params.add("error=" + URLEncoder.encode("processing_error", StandardCharsets.UTF_8));
 
@@ -152,15 +137,8 @@ public class GitHubController {
         String finalRedirectUrl = callbackUrl.toString();
         log.info("Redirecting to frontend callback URL: {}", finalRedirectUrl);
 
-        // Perform the actual redirect
         response.sendRedirect(finalRedirectUrl);
     }
-
-    /**
-     * REMOVED: POST OAuth callback endpoint to prevent double state consumption
-     * The GET endpoint above now handles all OAuth processing
-     */
-    // @PostMapping("/oauth/callback") - REMOVED TO FIX DOUBLE STATE CONSUMPTION
 
     @GetMapping("/repositories/search")
     public ResponseEntity<ApiResponse<RepositorySearchResult>> searchRepositories(
@@ -187,7 +165,7 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("Repository information retrieved successfully", repositoryInfo));
     }
 
-    // Connection management endpoints
+
 
     @PostMapping("/connections")
     public ResponseEntity<ApiResponse<ConnectionResponse>> createConnection(
@@ -246,7 +224,7 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("Connection sync completed", syncResponse));
     }
 
-    // Development endpoints for clearing connections
+
     @DeleteMapping("/dev/projects/{projectId}/connections/clear")
     public ResponseEntity<ApiResponse<Map<String, Object>>> clearProjectConnections(
             @PathVariable Long projectId,
@@ -255,11 +233,11 @@ public class GitHubController {
         User user = (User) authentication.getPrincipal();
 
         try {
-            // Get all connections for the project
+
             List<ConnectionResponse> connections = githubService.getProjectConnections(projectId, user);
 
             int deletedCount = 0;
-            // Delete each connection
+
             for (ConnectionResponse connection : connections) {
                 githubService.deleteConnection(connection.getId(), user);
                 deletedCount++;
@@ -283,7 +261,7 @@ public class GitHubController {
         }
     }
 
-    // Commits endpoints
+
 
     @GetMapping("/projects/{projectId}/commits")
     public ResponseEntity<ApiResponse<Page<CommitResponse>>> getProjectCommits(
@@ -323,7 +301,7 @@ public class GitHubController {
                 .body(ApiResponse.success("Commit-task link created successfully", link));
     }
 
-    // Pull Requests endpoints
+
 
     @GetMapping("/projects/{projectId}/pull-requests")
     public ResponseEntity<ApiResponse<Page<PullRequestResponse>>> getProjectPullRequests(
@@ -363,7 +341,7 @@ public class GitHubController {
                 .body(ApiResponse.success("PR-task link created successfully", link));
     }
 
-    // Search endpoints
+
 
     @PostMapping("/search")
     public ResponseEntity<ApiResponse<GitHubSearchResponse>> search(
@@ -376,7 +354,7 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("Search completed successfully", searchResponse));
     }
 
-    // Statistics endpoints
+
 
     @GetMapping("/projects/{projectId}/statistics")
     public ResponseEntity<ApiResponse<GitHubStatistics>> getProjectStatistics(
@@ -389,7 +367,7 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("GitHub statistics retrieved successfully", statistics));
     }
 
-    // Webhook endpoint (public - no authentication required)
+
 
     @PostMapping("/webhook")
     public ResponseEntity<ApiResponse<WebhookEventResponse>> handleWebhook(
@@ -433,7 +411,6 @@ public class GitHubController {
         }
     }
 
-    // Health check endpoint
 
     @GetMapping("/health")
     public ResponseEntity<ApiResponse<Map<String, Object>>> healthCheck() {
@@ -446,7 +423,7 @@ public class GitHubController {
         return ResponseEntity.ok(ApiResponse.success("GitHub integration service is healthy", health));
     }
 
-    // Admin endpoints (require admin role)
+
 
     @GetMapping("/admin/connections")
     public ResponseEntity<ApiResponse<List<ConnectionSummary>>> getAllConnections(
@@ -458,7 +435,6 @@ public class GitHubController {
                     .body(ApiResponse.error("Admin access required"));
         }
 
-        // This would need to be implemented in the service
         return ResponseEntity.ok(ApiResponse.success("All connections retrieved", List.of()));
     }
 
@@ -473,14 +449,11 @@ public class GitHubController {
                     .body(ApiResponse.error("Admin access required"));
         }
 
-        // This would reset connection errors and force resync
+
         return ResponseEntity.ok(ApiResponse.success("Connection reset successfully"));
     }
 
-    /**
-     * Development endpoint to reset OAuth state for testing
-     * This clears local state and provides guidance for full reset
-     */
+
     @PostMapping("/oauth/reset")
     public ResponseEntity<ApiResponse<Map<String, String>>> resetOAuthForTesting(
             @RequestParam Long projectId,
@@ -489,10 +462,7 @@ public class GitHubController {
         User user = (User) authentication.getPrincipal();
 
         try {
-            // Clear any stored OAuth state for this user/project
-            // This would depend on how your OAuth service stores state
-            // If you have stored tokens or state, clear them here
-            // oauthService.clearStoredState(user.getId(), projectId);
+
 
             log.info("Reset OAuth state for user {} and project {} for testing",
                     user.getId(), projectId);
@@ -513,7 +483,7 @@ public class GitHubController {
         }
     }
 
-    // Error handling
+
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Object>> handleIllegalArgument(IllegalArgumentException e) {

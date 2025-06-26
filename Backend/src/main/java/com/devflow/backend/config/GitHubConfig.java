@@ -28,9 +28,7 @@ public class GitHubConfig {
     @Value("${github.api.max-connections:50}")
     private int maxConnections;
 
-    /**
-     * RestTemplate configured for GitHub API calls with proper error handling
-     */
+
     @Bean("githubRestTemplate")
     public RestTemplate githubRestTemplate() {
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
@@ -45,10 +43,7 @@ public class GitHubConfig {
         return restTemplate;
     }
 
-    /**
-     * Custom error handler for GitHub API responses
-     * Extends DefaultResponseErrorHandler to use the modern, non-deprecated handleError method
-     */
+
     private static class GitHubApiErrorHandler extends DefaultResponseErrorHandler {
 
         @Override
@@ -64,7 +59,7 @@ public class GitHubConfig {
 
             log.error("GitHub API error: {} - {}", statusCode, responseBody);
 
-            // Handle specific GitHub API error cases
+
             if (statusCode.equals(HttpStatus.UNAUTHORIZED)) {
                 throw new GitHubAuthenticationException("GitHub authentication failed - invalid or expired token");
             } else if (statusCode.equals(HttpStatus.FORBIDDEN)) {
@@ -83,7 +78,7 @@ public class GitHubConfig {
         }
     }
 
-    // Custom GitHub exception classes for better error handling
+
     public static class GitHubApiException extends RuntimeException {
         public GitHubApiException(String message) {
             super(message);
