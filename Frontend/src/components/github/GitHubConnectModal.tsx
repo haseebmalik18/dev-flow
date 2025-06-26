@@ -1,5 +1,5 @@
-// Updated GitHubConnectModal.tsx - Fixed OAuth Flow (No more POST callback)
-import React, { useState, useEffect, useCallback } from "react";
+// Fixed GitHubConnectModal.tsx - Prevent Double OAuth Requests
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   X,
   Github,
@@ -32,7 +32,7 @@ interface GitHubConnectModalProps {
   projectName: string;
 }
 
-// Development Reset Component
+// Development Reset Component (unchanged)
 const DevGitHubReset: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [isResetting, setIsResetting] = useState(false);
   const [isClearingConnections, setIsClearingConnections] = useState(false);
@@ -88,7 +88,6 @@ const DevGitHubReset: React.FC<{ projectId: number }> = ({ projectId }) => {
         alert(
           `Cleared ${data.deletedConnections} GitHub connections for project ${projectId}`
         );
-        // Refresh the page or trigger a refetch
         window.location.reload();
       }
     } catch (error: any) {
@@ -105,7 +104,6 @@ const DevGitHubReset: React.FC<{ projectId: number }> = ({ projectId }) => {
     window.open("https://github.com/settings/applications", "_blank");
   };
 
-  // Only show in development
   if (process.env.NODE_ENV !== "development") {
     return null;
   }
@@ -200,8 +198,12 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [isOAuthInProgress, setIsOAuthInProgress] = useState(false);
 
+  // CRITICAL FIX: Prevent duplicate OAuth requests
+  const oauthInProgressRef = useRef(false);
+  const hasProcessedCallbackRef = useRef(false);
+  const popupWindowRef = useRef<Window | null>(null);
+
   const gitHubOAuthMutation = useGitHubOAuth();
-  // REMOVED: useGitHubOAuthCallback - no longer needed since backend handles everything
   const createConnectionMutation = useCreateGitHubConnection();
 
   const {
@@ -210,7 +212,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     error: searchError,
   } = useSearchGitHubRepositories(accessToken, searchQuery, 1, 50);
 
-  // CRITICAL FIX: Validate projectId and close modal if invalid
+  // Validate projectId
   useEffect(() => {
     if (isOpen && (!projectId || isNaN(projectId) || projectId <= 0)) {
       console.error(
@@ -222,7 +224,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     }
   }, [isOpen, projectId, onClose]);
 
-  // FIXED: Enhanced OAuth callback handler - now handles backend-processed results
+  // FIXED: Enhanced OAuth callback handler with duplicate prevention
   useEffect(() => {
     if (!isOpen) return;
 
@@ -233,43 +235,54 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
         return;
       }
 
+      // CRITICAL FIX: Prevent processing duplicate callbacks
+      if (hasProcessedCallbackRef.current) {
+        console.log("Ignoring duplicate OAuth callback message");
+        return;
+      }
+
       console.log("Received OAuth message:", event.data);
 
       if (event.data.type === "GITHUB_OAUTH_SUCCESS") {
-        // FIXED: Backend has already processed OAuth completely
-        // We just need to handle the success notification
+        // Mark as processed immediately
+        hasProcessedCallbackRef.current = true;
+
         console.log("OAuth completed successfully by backend");
 
-        // Extract user info from the message if available
         const { github_user, github_name, message } = event.data;
 
         if (github_user) {
-          // Set user info for display (we'll need to create access token somehow)
           setGithubUserInfo({
             login: github_user,
             name: github_name || github_user,
-            avatarUrl: `https://github.com/${github_user}.png`, // GitHub's standard avatar URL
+            avatarUrl: `https://github.com/${github_user}.png`,
           });
 
-          // For repository search, we'll need an access token
-          // Since backend processed OAuth, we need a way to get the token
-          // This is a limitation of the current flow - let's handle it
-          setAccessToken("backend_processed"); // Placeholder - will need to be handled differently
-
+          setAccessToken("backend_processed");
           setStep("search");
           setOauthError(null);
           setIsOAuthInProgress(false);
+          oauthInProgressRef.current = false;
 
           console.log("GitHub user connected:", github_user);
         } else {
-          // Success but no user info - still proceed
           setStep("search");
           setOauthError(null);
           setIsOAuthInProgress(false);
+          oauthInProgressRef.current = false;
+        }
+
+        // Close popup if still open
+        if (popupWindowRef.current && !popupWindowRef.current.closed) {
+          popupWindowRef.current.close();
+          popupWindowRef.current = null;
         }
       }
 
       if (event.data.type === "GITHUB_OAUTH_ERROR") {
+        // Mark as processed to prevent duplicate error handling
+        hasProcessedCallbackRef.current = true;
+
         console.error("GitHub OAuth error:", event.data);
         const errorMessage =
           event.data.description ||
@@ -277,16 +290,24 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           "Unknown error occurred";
         setOauthError(`GitHub authorization failed: ${errorMessage}`);
         setIsOAuthInProgress(false);
+        oauthInProgressRef.current = false;
+
+        // Close popup if still open
+        if (popupWindowRef.current && !popupWindowRef.current.closed) {
+          popupWindowRef.current.close();
+          popupWindowRef.current = null;
+        }
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [isOpen]); // REMOVED: gitHubCallbackMutation dependency
+  }, [isOpen]);
 
-  // Reset state when modal closes
+  // CRITICAL FIX: Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
+      // Reset all state
       setStep("oauth");
       setAccessToken("");
       setSearchQuery("");
@@ -294,11 +315,28 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
       setGithubUserInfo(null);
       setOauthError(null);
       setIsOAuthInProgress(false);
+
+      // Reset refs to allow new OAuth flows
+      oauthInProgressRef.current = false;
+      hasProcessedCallbackRef.current = false;
+
+      // Close any open popup
+      if (popupWindowRef.current && !popupWindowRef.current.closed) {
+        popupWindowRef.current.close();
+        popupWindowRef.current = null;
+      }
     }
   }, [isOpen]);
 
+  // CRITICAL FIX: Enhanced OAuth handler with duplicate prevention
   const handleStartOAuth = useCallback(() => {
-    // CRITICAL FIX: Validate projectId before making request
+    // PREVENT DUPLICATE REQUESTS
+    if (oauthInProgressRef.current || isOAuthInProgress) {
+      console.log("OAuth already in progress, ignoring duplicate request");
+      return;
+    }
+
+    // Validate projectId
     if (!projectId || isNaN(projectId) || projectId <= 0) {
       console.error("Cannot start OAuth: invalid projectId", projectId);
       setOauthError(
@@ -307,9 +345,11 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
       return;
     }
 
-    // Clear any previous errors
-    setOauthError(null);
+    // Mark as in progress immediately
+    oauthInProgressRef.current = true;
     setIsOAuthInProgress(true);
+    setOauthError(null);
+    hasProcessedCallbackRef.current = false; // Reset callback processing flag
 
     console.log("Starting OAuth for projectId:", projectId);
 
@@ -327,7 +367,12 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             window.location.pathname
           );
 
-          // Open popup window with specific features for better compatibility
+          // Close any existing popup first
+          if (popupWindowRef.current && !popupWindowRef.current.closed) {
+            popupWindowRef.current.close();
+          }
+
+          // Open popup window
           const popup = window.open(
             response.data.authorizationUrl,
             "github-oauth",
@@ -339,10 +384,12 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
               "Please allow popups for this site to connect with GitHub."
             );
             setIsOAuthInProgress(false);
+            oauthInProgressRef.current = false;
             return;
           }
 
-          // Focus the popup
+          // Store popup reference
+          popupWindowRef.current = popup;
           popup.focus();
 
           // Check if popup was closed manually
@@ -350,7 +397,14 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             if (popup.closed) {
               clearInterval(checkClosed);
               console.log("OAuth popup was closed manually");
-              setIsOAuthInProgress(false);
+
+              // Only reset state if callback wasn't processed
+              if (!hasProcessedCallbackRef.current) {
+                setIsOAuthInProgress(false);
+                oauthInProgressRef.current = false;
+              }
+
+              popupWindowRef.current = null;
             }
           }, 1000);
 
@@ -360,8 +414,15 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
               popup.close();
               clearInterval(checkClosed);
               console.log("OAuth popup timed out");
-              setOauthError("OAuth process timed out. Please try again.");
-              setIsOAuthInProgress(false);
+
+              // Only show error if callback wasn't processed
+              if (!hasProcessedCallbackRef.current) {
+                setOauthError("OAuth process timed out. Please try again.");
+                setIsOAuthInProgress(false);
+                oauthInProgressRef.current = false;
+              }
+
+              popupWindowRef.current = null;
             }
           }, 5 * 60 * 1000);
 
@@ -370,12 +431,18 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             if (popup.closed) {
               clearInterval(enhancedCheckClosed);
               clearTimeout(timeout);
-              setIsOAuthInProgress(false);
+
+              // Only reset state if callback wasn't processed
+              if (!hasProcessedCallbackRef.current) {
+                setIsOAuthInProgress(false);
+                oauthInProgressRef.current = false;
+              }
             }
           }, 1000);
         } else {
           setOauthError("Failed to get authorization URL from server");
           setIsOAuthInProgress(false);
+          oauthInProgressRef.current = false;
         }
       },
       onError: (error: any) => {
@@ -386,9 +453,10 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           "Unknown error occurred";
         setOauthError(`Failed to initiate GitHub OAuth: ${errorMessage}`);
         setIsOAuthInProgress(false);
+        oauthInProgressRef.current = false;
       },
     });
-  }, [gitHubOAuthMutation, projectId]);
+  }, [gitHubOAuthMutation, projectId, isOAuthInProgress]);
 
   const handleSelectRepository = useCallback((repo: GitHubRepository) => {
     setSelectedRepo(repo);
@@ -398,22 +466,18 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   const handleConnectRepository = useCallback(() => {
     if (!selectedRepo) return;
 
-    // CRITICAL FIX: Validate projectId before creating connection
     if (!projectId || isNaN(projectId) || projectId <= 0) {
       console.error("Cannot connect repository: invalid projectId", projectId);
       alert("Invalid project ID. Please refresh the page and try again.");
       return;
     }
 
-    // ISSUE: We need access token for connection creation
-    // Since backend processed OAuth, we need to modify this approach
-    // For now, we'll pass a placeholder and handle it in backend
     const connectionData = {
       projectId,
       repositoryFullName: selectedRepo.fullName,
       repositoryUrl: selectedRepo.url,
       repositoryId: selectedRepo.id,
-      accessToken: accessToken || "backend_processed", // Backend should handle this
+      accessToken: accessToken || "backend_processed",
     };
 
     createConnectionMutation.mutate(connectionData, {
@@ -427,6 +491,8 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
         setGithubUserInfo(null);
         setOauthError(null);
         setIsOAuthInProgress(false);
+        oauthInProgressRef.current = false;
+        hasProcessedCallbackRef.current = false;
       },
       onError: (error: any) => {
         console.error("Failed to create connection:", error);
@@ -452,11 +518,21 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     setGithubUserInfo(null);
     setOauthError(null);
     setIsOAuthInProgress(false);
+    oauthInProgressRef.current = false;
+    hasProcessedCallbackRef.current = false;
+
+    // Close any open popup
+    if (popupWindowRef.current && !popupWindowRef.current.closed) {
+      popupWindowRef.current.close();
+      popupWindowRef.current = null;
+    }
   }, []);
 
   const handleRetryOAuth = useCallback(() => {
     setOauthError(null);
     setIsOAuthInProgress(false);
+    oauthInProgressRef.current = false;
+    hasProcessedCallbackRef.current = false;
     handleStartOAuth();
   }, [handleStartOAuth]);
 
@@ -468,7 +544,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     });
   };
 
-  // CRITICAL FIX: Don't render if projectId is invalid
+  // Don't render if projectId is invalid
   if (!isOpen || !projectId || isNaN(projectId) || projectId <= 0) {
     return null;
   }
@@ -545,7 +621,13 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 loading={gitHubOAuthMutation.isPending || isOAuthInProgress}
                 icon={<Github className="w-5 h-5" />}
                 className="bg-gray-900 hover:bg-gray-800"
-                disabled={!projectId || isNaN(projectId) || projectId <= 0}
+                disabled={
+                  !projectId ||
+                  isNaN(projectId) ||
+                  projectId <= 0 ||
+                  isOAuthInProgress ||
+                  oauthInProgressRef.current
+                }
               >
                 {isOAuthInProgress
                   ? "Opening GitHub..."
@@ -596,8 +678,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 </div>
               )}
 
-              {/* TEMPORARY NOTICE: Since backend processes OAuth completely, 
-                  repository search needs to be updated to work with stored tokens */}
               {!githubUserInfo && (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <div className="flex items-start space-x-3">
@@ -628,8 +708,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 />
               </div>
 
-              {/* Repository search results would go here - currently disabled 
-                  until we implement backend endpoint for searching with stored tokens */}
               {accessToken === "backend_processed" && (
                 <div className="text-center py-8">
                   <Github className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -643,9 +721,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                   </p>
                 </div>
               )}
-
-              {/* Rest of search results rendering remains the same but will be disabled
-                  until we implement proper backend search with stored tokens */}
             </div>
           )}
 
@@ -778,7 +853,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           )}
         </div>
 
-        {/* FIXED: Updated loading overlay - removed gitHubCallbackMutation */}
+        {/* Loading overlay */}
         {gitHubOAuthMutation.isPending && (
           <div className="absolute inset-0 bg-white/90 flex items-center justify-center">
             <div className="text-center">

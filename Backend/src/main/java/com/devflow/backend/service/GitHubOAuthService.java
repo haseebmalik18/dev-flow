@@ -1,4 +1,4 @@
-// Fixed GitHubOAuthService.java - Better State Management
+// Enhanced GitHubOAuthService.java - Additional Protection Against Double OAuth
 package com.devflow.backend.service;
 
 import com.devflow.backend.dto.github.GitHubDTOs.*;
@@ -47,9 +47,10 @@ public class GitHubOAuthService {
     @Value("${app.ngrok-frontend-url:}")
     private String ngrokFrontendUrl;
 
-    // FIXED: Better state management with tracking
+    // ENHANCED: Better state management with additional protection
     private final Map<String, OAuthState> stateStore = new ConcurrentHashMap<>();
     private final Set<String> consumedStates = ConcurrentHashMap.newKeySet();
+    private final Map<String, Set<String>> userActiveStates = new ConcurrentHashMap<>(); // Track states per user
 
     @lombok.Data
     @lombok.AllArgsConstructor
@@ -58,13 +59,17 @@ public class GitHubOAuthService {
         private Long projectId;
         private LocalDateTime createdAt;
         private String userAgent;
-        private boolean consumed; // Track if state has been used
+        private boolean consumed;
+        private String requestId; // NEW: Unique request identifier
     }
 
     /**
-     * Generate GitHub OAuth authorization URL
+     * ENHANCED: Generate GitHub OAuth authorization URL with better state management
      */
     public String generateAuthorizationUrl(User user, Long projectId) {
+        // PROTECTION: Clear any existing active states for this user/project combination
+        clearExistingStatesForUser(user.getId(), projectId);
+
         String state = generateSecureState(user, projectId);
         String redirectUri = getRedirectUri();
 
@@ -84,17 +89,17 @@ public class GitHubOAuthService {
     }
 
     /**
-     * FIXED: Handle OAuth callback with better state validation
+     * ENHANCED: Handle OAuth callback with additional state validation
      */
     public GitHubAuthResponse handleOAuthCallback(GitHubAuthRequest request, String userAgent) {
         try {
             log.info("Handling GitHub OAuth callback with code: {} and state: {}",
                     request.getCode() != null ? "present" : "null", request.getState());
 
-            // FIXED: Enhanced state validation with consumption tracking
-            OAuthState oauthState = validateAndConsumeState(request.getState(), userAgent);
+            // ENHANCED: More thorough state validation
+            OAuthState oauthState = validateAndConsumeStateEnhanced(request.getState(), userAgent);
             if (oauthState == null) {
-                throw new AuthException("Invalid or expired OAuth state");
+                throw new AuthException("Invalid, expired, or already consumed OAuth state");
             }
 
             // Exchange code for access token
@@ -123,9 +128,189 @@ public class GitHubOAuthService {
         }
     }
 
+    // ENHANCED: Additional state validation methods
+
     /**
-     * Search repositories accessible to the user
+     * PROTECTION: Clear existing states for a user/project to prevent conflicts
      */
+    private void clearExistingStatesForUser(Long userId, Long projectId) {
+        String userKey = userId + ":" + projectId;
+        Set<String> activeStates = userActiveStates.get(userKey);
+
+        if (activeStates != null) {
+            log.info("Clearing {} existing OAuth states for user {} and project {}",
+                    activeStates.size(), userId, projectId);
+
+            for (String existingState : activeStates) {
+                stateStore.remove(existingState);
+                consumedStates.add(existingState); // Mark as consumed to prevent reuse
+            }
+
+            userActiveStates.remove(userKey);
+        }
+    }
+
+    /**
+     * ENHANCED: Generate secure state with user tracking
+     */
+    private String generateSecureState(User user, Long projectId) {
+        String state = UUID.randomUUID().toString();
+        String requestId = UUID.randomUUID().toString(); // Unique request identifier
+
+        OAuthState oauthState = new OAuthState(user, projectId, LocalDateTime.now(), "web", false, requestId);
+        stateStore.put(state, oauthState);
+
+        // Track state for this user/project
+        String userKey = user.getId() + ":" + projectId;
+        userActiveStates.computeIfAbsent(userKey, k -> ConcurrentHashMap.newKeySet()).add(state);
+
+        cleanupExpiredStates();
+
+        log.debug("Generated OAuth state {} (request {}) for user {} and project {}",
+                state, requestId, user.getId(), projectId);
+        return state;
+    }
+
+    /**
+     * ENHANCED: State validation with additional protection layers
+     */
+    private OAuthState validateAndConsumeStateEnhanced(String state, String userAgent) {
+        if (state == null || state.trim().isEmpty()) {
+            log.warn("Received null or empty state parameter");
+            return null;
+        }
+
+        // PROTECTION 1: Check if state was already consumed globally
+        if (consumedStates.contains(state)) {
+            log.warn("State parameter already consumed globally: {}", state);
+            return null;
+        }
+
+        // PROTECTION 2: Get state from store
+        OAuthState oauthState = stateStore.get(state);
+        if (oauthState == null) {
+            log.warn("Invalid state parameter (not found in store): {}", state);
+            return null;
+        }
+
+        // PROTECTION 3: Check if state is expired (15 minutes)
+        if (oauthState.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(15))) {
+            stateStore.remove(state);
+            log.warn("Expired state parameter: {}", state);
+            return null;
+        }
+
+        // PROTECTION 4: Check if already consumed (state-level)
+        if (oauthState.isConsumed()) {
+            log.warn("State parameter already consumed (marked in state): {}", state);
+            return null;
+        }
+
+        // PROTECTION 5: Double-check against our tracking
+        String userKey = oauthState.getUser().getId() + ":" + oauthState.getProjectId();
+        Set<String> userStates = userActiveStates.get(userKey);
+        if (userStates == null || !userStates.contains(state)) {
+            log.warn("State parameter not found in user tracking: {}", state);
+            return null;
+        }
+
+        // CRITICAL: Mark state as consumed IMMEDIATELY with multiple protections
+        oauthState.setConsumed(true);
+        consumedStates.add(state);
+
+        // Remove from active store and user tracking immediately
+        stateStore.remove(state);
+        if (userStates != null) {
+            userStates.remove(state);
+            if (userStates.isEmpty()) {
+                userActiveStates.remove(userKey);
+            }
+        }
+
+        log.info("✅ Successfully validated and consumed OAuth state {} (request {}) for user {} and project {}",
+                state, oauthState.getRequestId(), oauthState.getUser().getId(), oauthState.getProjectId());
+
+        return oauthState;
+    }
+
+    /**
+     * ENHANCED: Cleanup with user state tracking
+     */
+    private void cleanupExpiredStates() {
+        LocalDateTime expiry = LocalDateTime.now().minusMinutes(15);
+
+        // Clean up expired states from active store
+        int removedStates = 0;
+        Iterator<Map.Entry<String, OAuthState>> iterator = stateStore.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, OAuthState> entry = iterator.next();
+            if (entry.getValue().getCreatedAt().isBefore(expiry)) {
+                String state = entry.getKey();
+                OAuthState oauthState = entry.getValue();
+
+                // Remove from user tracking
+                String userKey = oauthState.getUser().getId() + ":" + oauthState.getProjectId();
+                Set<String> userStates = userActiveStates.get(userKey);
+                if (userStates != null) {
+                    userStates.remove(state);
+                    if (userStates.isEmpty()) {
+                        userActiveStates.remove(userKey);
+                    }
+                }
+
+                iterator.remove();
+                removedStates++;
+            }
+        }
+
+        // Clean up very old consumed states (keep for 1 hour to prevent replay attacks)
+        if (consumedStates.size() > 1000) {
+            log.info("Clearing consumed states set due to size ({})", consumedStates.size());
+            consumedStates.clear();
+        }
+
+        if (removedStates > 0) {
+            log.debug("Cleaned up {} expired OAuth states", removedStates);
+        }
+    }
+
+    /**
+     * ENHANCED: Development method to clear OAuth state with user tracking
+     */
+    public void clearStoredState(Long userId, Long projectId) {
+        log.info("Clearing OAuth state for user {} and project {} (development)", userId, projectId);
+
+        // Clear from user tracking first
+        clearExistingStatesForUser(userId, projectId);
+
+        // Remove any remaining states for this user/project combination
+        stateStore.entrySet().removeIf(entry -> {
+            OAuthState state = entry.getValue();
+            return state.getUser().getId().equals(userId) &&
+                    state.getProjectId().equals(projectId);
+        });
+
+        log.info("Cleared OAuth states for user {} and project {}", userId, projectId);
+    }
+
+    /**
+     * NEW: Check if user has any active OAuth states (for debugging)
+     */
+    public boolean hasActiveOAuthStates(Long userId, Long projectId) {
+        String userKey = userId + ":" + projectId;
+        Set<String> activeStates = userActiveStates.get(userKey);
+        boolean hasActive = activeStates != null && !activeStates.isEmpty();
+
+        if (hasActive) {
+            log.debug("User {} has {} active OAuth states for project {}", userId, activeStates.size(), projectId);
+        }
+
+        return hasActive;
+    }
+
+    // Rest of the methods remain the same...
+    // (searchRepositories, getRepositoryInfo, validateAccessToken, etc.)
+
     public RepositorySearchResult searchRepositories(String accessToken, String query, int page, int perPage) {
         try {
             log.info("Searching GitHub repositories with query: {}, page: {}, perPage: {}", query, page, perPage);
@@ -166,9 +351,6 @@ public class GitHubOAuthService {
         }
     }
 
-    /**
-     * Get repository details
-     */
     public RepositoryInfo getRepositoryInfo(String accessToken, String owner, String repo) {
         try {
             log.info("Getting repository info for {}/{}", owner, repo);
@@ -194,9 +376,6 @@ public class GitHubOAuthService {
         }
     }
 
-    /**
-     * Validate GitHub access token
-     */
     public boolean validateAccessToken(String accessToken) {
         try {
             HttpHeaders headers = createAuthHeaders(accessToken);
@@ -214,9 +393,6 @@ public class GitHubOAuthService {
         }
     }
 
-    /**
-     * Revoke GitHub access token
-     */
     public void revokeAccessToken(String accessToken) {
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -238,7 +414,7 @@ public class GitHubOAuthService {
         }
     }
 
-    // Private helper methods
+    // Private helper methods remain the same...
 
     private String getRedirectUri() {
         String redirectUri;
@@ -271,65 +447,6 @@ public class GitHubOAuthService {
         }
 
         return frontendUrl + "/auth/github/callback";
-    }
-
-    private String generateSecureState(User user, Long projectId) {
-        String state = UUID.randomUUID().toString();
-        OAuthState oauthState = new OAuthState(user, projectId, LocalDateTime.now(), "web", false);
-        stateStore.put(state, oauthState);
-
-        cleanupExpiredStates();
-
-        log.debug("Generated OAuth state for user {} and project {}", user.getId(), projectId);
-        return state;
-    }
-
-    /**
-     * FIXED: Enhanced state validation with consumption tracking
-     */
-    private OAuthState validateAndConsumeState(String state, String userAgent) {
-        if (state == null || state.trim().isEmpty()) {
-            log.warn("Received null or empty state parameter");
-            return null;
-        }
-
-        // FIXED: Check if state was already consumed (prevents double consumption)
-        if (consumedStates.contains(state)) {
-            log.warn("State parameter already consumed: {}", state);
-            return null;
-        }
-
-        OAuthState oauthState = stateStore.get(state);
-
-        if (oauthState == null) {
-            log.warn("Invalid state parameter (not found in store): {}", state);
-            return null;
-        }
-
-        // Check if state is expired (15 minutes)
-        if (oauthState.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(15))) {
-            stateStore.remove(state);
-            log.warn("Expired state parameter: {}", state);
-            return null;
-        }
-
-        // Check if already consumed
-        if (oauthState.isConsumed()) {
-            log.warn("State parameter already consumed (marked in state): {}", state);
-            return null;
-        }
-
-        // CRITICAL FIX: Mark state as consumed IMMEDIATELY to prevent double consumption
-        oauthState.setConsumed(true);
-        consumedStates.add(state);
-
-        // Remove from active store immediately to prevent any possibility of reuse
-        stateStore.remove(state);
-
-        log.info("✅ Successfully validated and consumed OAuth state for user {} and project {}",
-                oauthState.getUser().getId(), oauthState.getProjectId());
-
-        return oauthState;
     }
 
     private String exchangeCodeForToken(String code) {
@@ -499,67 +616,13 @@ public class GitHubOAuthService {
         }
     }
 
-    /**
-     * FIXED: Enhanced cleanup with consumed states management
-     */
-    private void cleanupExpiredStates() {
-        LocalDateTime expiry = LocalDateTime.now().minusMinutes(15);
-
-        // Clean up expired states from active store
-        int removedStates = 0;
-        Iterator<Map.Entry<String, OAuthState>> iterator = stateStore.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<String, OAuthState> entry = iterator.next();
-            if (entry.getValue().getCreatedAt().isBefore(expiry)) {
-                iterator.remove();
-                removedStates++;
-            }
-        }
-
-        // Clean up very old consumed states (keep for 1 hour to prevent replay attacks)
-        LocalDateTime oldConsumedExpiry = LocalDateTime.now().minusHours(1);
-        // Note: In a real production system, you'd want to store consumed states with timestamps
-        // For now, we'll periodically clear the entire consumed set if it gets too large
-        if (consumedStates.size() > 1000) {
-            log.info("Clearing consumed states set due to size ({})", consumedStates.size());
-            consumedStates.clear();
-        }
-
-        if (removedStates > 0) {
-            log.debug("Cleaned up {} expired OAuth states", removedStates);
-        }
-    }
-
-    /**
-     * Get the project ID from stored OAuth state
-     */
     public Long getProjectIdFromState(String state) {
         OAuthState oauthState = stateStore.get(state);
         return oauthState != null ? oauthState.getProjectId() : null;
     }
 
-    /**
-     * Get the user from stored OAuth state
-     */
     public User getUserFromState(String state) {
         OAuthState oauthState = stateStore.get(state);
         return oauthState != null ? oauthState.getUser() : null;
-    }
-
-    /**
-     * FIXED: Development method to clear OAuth state
-     */
-    public void clearStoredState(Long userId, Long projectId) {
-        log.info("Clearing OAuth state for user {} and project {} (development)", userId, projectId);
-
-        // Remove states for this user/project combination
-        stateStore.entrySet().removeIf(entry -> {
-            OAuthState state = entry.getValue();
-            return state.getUser().getId().equals(userId) &&
-                    state.getProjectId().equals(projectId);
-        });
-
-        // Note: We don't clear consumed states as they should remain to prevent replay
-        log.info("Cleared OAuth states for user {} and project {}", userId, projectId);
     }
 }
