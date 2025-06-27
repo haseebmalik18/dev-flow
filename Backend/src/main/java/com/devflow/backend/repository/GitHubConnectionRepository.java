@@ -24,8 +24,6 @@ public interface GitHubConnectionRepository extends JpaRepository<GitHubConnecti
 
     boolean existsByProjectAndRepositoryFullNameAndStatus(Project project, String repositoryFullName, GitHubConnectionStatus status);
 
-    boolean existsActiveConnectionForProjectAndRepository(Project project, String repositoryFullName);
-
     Optional<GitHubConnection> findByRepositoryFullNameAndStatus(String repositoryFullName, GitHubConnectionStatus status);
 
     List<GitHubConnection> findByWebhookStatusAndLastWebhookAtBefore(String webhookStatus, LocalDateTime before);
