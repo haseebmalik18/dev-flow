@@ -140,7 +140,10 @@ public class GitHubWebhookService {
             log.info("Processing webhook for connection: {} (ID: {})",
                     connection.getRepositoryFullName(), connection.getId());
 
-            if (!verifyWebhookSignature(request.getPayload(), signature, connection.getWebhookSecret())) {
+            // Get the raw payload as string for signature verification
+            String rawPayload = getRawPayloadString(request.getPayload());
+
+            if (!verifyWebhookSignature(rawPayload, signature, connection.getWebhookSecret())) {
                 log.warn("Webhook signature verification failed for connection: {}", connection.getRepositoryFullName());
                 return WebhookEventResponse.builder()
                         .processed(false)
@@ -179,6 +182,18 @@ public class GitHubWebhookService {
     @Async
     public void processWebhookEventAsync(WebhookEventRequest request, String signature) {
         processWebhookEvent(request, signature);
+    }
+
+    private String getRawPayloadString(Object payload) {
+        try {
+            if (payload instanceof String) {
+                return (String) payload;
+            }
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            log.error("Failed to convert payload to string for signature verification: {}", e.getMessage());
+            throw new RuntimeException("Failed to process payload for signature verification");
+        }
     }
 
     private List<String> processEventByType(String eventType, String action, Object payload,
@@ -474,7 +489,7 @@ public class GitHubWebhookService {
         return Optional.empty();
     }
 
-    private boolean verifyWebhookSignature(Object payload, String signature, String secret) {
+    private boolean verifyWebhookSignature(String rawPayload, String signature, String secret) {
         log.info("=== Webhook Signature Verification Debug ===");
         log.info("Received signature: {}", signature);
         log.info("Stored secret exists: {}", secret != null);
@@ -491,20 +506,20 @@ public class GitHubWebhookService {
         }
 
         try {
-            String payloadString = objectMapper.writeValueAsString(payload);
-            log.info("Payload string length: {}", payloadString.length());
-            log.info("Payload string preview: {}", payloadString.length() > 100 ?
-                    payloadString.substring(0, 100) + "..." : payloadString);
+            log.info("Raw payload length: {}", rawPayload.length());
+            log.info("Raw payload preview: {}", rawPayload.length() > 100 ?
+                    rawPayload.substring(0, 100) + "..." : rawPayload);
 
-            String calculatedHash = calculateHmacSha256(payloadString, secret);
+            String calculatedHash = calculateHmacSha256(rawPayload, secret);
             String expectedSignature = "sha256=" + calculatedHash;
 
             log.info("Calculated HMAC hash: {}", calculatedHash);
             log.info("Expected full signature: {}", expectedSignature);
             log.info("Received signature:     {}", signature);
-            log.info("Signatures match: {}", signature.equals(expectedSignature));
 
-            boolean matches = signature.equals(expectedSignature);
+            // Use secure comparison to prevent timing attacks
+            boolean matches = secureEquals(signature, expectedSignature);
+            log.info("Signatures match: {}", matches);
 
             if (!matches) {
                 log.warn("Signature verification failed!");
@@ -512,8 +527,20 @@ public class GitHubWebhookService {
                 log.warn("1. Wrong secret stored in database");
                 log.warn("2. GitHub using different secret than stored");
                 log.warn("3. Payload modification during transport");
+                log.warn("4. Encoding or formatting differences");
+
+                // Debug: Try with different approaches
+                String altHash1 = calculateHmacSha256(rawPayload.trim(), secret);
+                String altSig1 = "sha256=" + altHash1;
+                log.info("Alternative calculation (trimmed): {}", altSig1);
+
+                // Try with UTF-8 explicit encoding
+                String altHash2 = calculateHmacSha256UTF8(rawPayload, secret);
+                String altSig2 = "sha256=" + altHash2;
+                log.info("Alternative calculation (UTF-8): {}", altSig2);
+
             } else {
-                log.info("Signature verification successful!");
+                log.info("✅ Signature verification successful!");
             }
 
             return matches;
@@ -530,6 +557,31 @@ public class GitHubWebhookService {
         mac.init(secretKeySpec);
         byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(hash);
+    }
+
+    private String calculateHmacSha256UTF8(String data, String secret) throws NoSuchAlgorithmException, InvalidKeyException {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        mac.init(secretKeySpec);
+        byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+        return HexFormat.of().formatHex(hash).toLowerCase();
+    }
+
+    private boolean secureEquals(String a, String b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+
+        if (a.length() != b.length()) {
+            return false;
+        }
+
+        int result = 0;
+        for (int i = 0; i < a.length(); i++) {
+            result |= a.charAt(i) ^ b.charAt(i);
+        }
+
+        return result == 0;
     }
 
     private GitHubPRStatus parseGitHubPRStatus(String state, boolean isDraft) {
