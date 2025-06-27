@@ -52,17 +52,23 @@ public class GitHubIntegrationService {
         }
 
         try {
-            String webhookId = webhookService.createWebhook(
+            GitHubWebhookService.WebhookCreationResult webhookResult = webhookService.createWebhook(
                     request.getRepositoryFullName(),
                     userToken.getAccessToken()
             );
+
+            log.info("=== Creating GitHub Connection ===");
+            log.info("Repository: {}", request.getRepositoryFullName());
+            log.info("Webhook ID: {}", webhookResult.getWebhookId());
+            log.info("Webhook secret: {}", webhookResult.getSecret());
 
             GitHubConnection connection = GitHubConnection.builder()
                     .project(project)
                     .repositoryFullName(request.getRepositoryFullName())
                     .repositoryUrl(request.getRepositoryUrl())
                     .repositoryId(request.getRepositoryId())
-                    .webhookId(webhookId)
+                    .webhookId(webhookResult.getWebhookId())
+                    .webhookSecret(webhookResult.getSecret())
                     .installationId(request.getInstallationId())
                     .connectedBy(user)
                     .status(GitHubConnectionStatus.ACTIVE)
@@ -70,6 +76,10 @@ public class GitHubIntegrationService {
                     .build();
 
             connection = connectionRepository.save(connection);
+
+            log.info("Connection saved with ID: {}", connection.getId());
+            log.info("Stored webhook secret length: {}",
+                    connection.getWebhookSecret() != null ? connection.getWebhookSecret().length() : "null");
 
             activityService.createProjectUpdatedActivity(
                     user,

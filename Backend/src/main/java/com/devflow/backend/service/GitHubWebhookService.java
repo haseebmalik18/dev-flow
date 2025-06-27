@@ -44,10 +44,23 @@ public class GitHubWebhookService {
     @Value("${app.base-url}")
     private String baseUrl;
 
-    public String createWebhook(String repositoryFullName, String accessToken) {
+    @lombok.Data
+    @lombok.Builder
+    @lombok.AllArgsConstructor
+    public static class WebhookCreationResult {
+        private String webhookId;
+        private String secret;
+    }
+
+    public WebhookCreationResult createWebhook(String repositoryFullName, String accessToken) {
         try {
             String webhookUrl = baseUrl + "/api/v1/github/webhook";
             String secret = generateWebhookSecret();
+
+            log.info("=== Creating GitHub Webhook ===");
+            log.info("Repository: {}", repositoryFullName);
+            log.info("Webhook URL: {}", webhookUrl);
+            log.info("Generated secret: {}", secret);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(accessToken);
@@ -70,14 +83,21 @@ public class GitHubWebhookService {
             HttpEntity<CreateWebhookRequest> entity = new HttpEntity<>(request, headers);
 
             String url = String.format("https://api.github.com/repos/%s/hooks", repositoryFullName);
+
+            log.info("Sending webhook creation request to: {}", url);
+
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                     url, HttpMethod.POST, entity, JsonNode.class
             );
 
             if (response.getStatusCode() == HttpStatus.CREATED && response.getBody() != null) {
                 String webhookId = response.getBody().get("id").asText();
-                log.info("Created webhook {} for repository: {}", webhookId, repositoryFullName);
-                return webhookId;
+                log.info("Webhook created successfully with ID: {}", webhookId);
+
+                return WebhookCreationResult.builder()
+                        .webhookId(webhookId)
+                        .secret(secret)
+                        .build();
             }
 
             throw new RuntimeException("Failed to create webhook");
@@ -90,8 +110,6 @@ public class GitHubWebhookService {
 
     public void deleteWebhook(String repositoryFullName, String webhookId) {
         try {
-            // Note: This would require stored access token or GitHub App authentication
-            // For now, mark as inactive and let GitHub handle cleanup
             log.info("Webhook {} marked for deletion for repository: {}", webhookId, repositoryFullName);
 
         } catch (Exception e) {
@@ -101,7 +119,11 @@ public class GitHubWebhookService {
 
     public WebhookEventResponse processWebhookEvent(WebhookEventRequest request, String signature) {
         try {
-            log.info("Processing GitHub webhook event: {} - {}", request.getEvent(), request.getAction());
+            log.info("=== Processing GitHub Webhook Event ===");
+            log.info("Event type: {}", request.getEvent());
+            log.info("Action: {}", request.getAction());
+            log.info("Delivery ID: {}", request.getDeliveryId());
+            log.info("Signature provided: {}", signature != null);
 
             Optional<GitHubConnection> connectionOpt = findConnectionFromPayload(request.getPayload());
 
@@ -115,9 +137,11 @@ public class GitHubWebhookService {
             }
 
             GitHubConnection connection = connectionOpt.get();
+            log.info("Processing webhook for connection: {} (ID: {})",
+                    connection.getRepositoryFullName(), connection.getId());
 
             if (!verifyWebhookSignature(request.getPayload(), signature, connection.getWebhookSecret())) {
-                log.warn("Invalid webhook signature for connection: {}", connection.getRepositoryFullName());
+                log.warn("Webhook signature verification failed for connection: {}", connection.getRepositoryFullName());
                 return WebhookEventResponse.builder()
                         .processed(false)
                         .message("Invalid signature")
@@ -125,11 +149,15 @@ public class GitHubWebhookService {
                         .build();
             }
 
+            log.info("Webhook signature verified successfully!");
+
             connection.recordWebhookReceived();
             connectionRepository.save(connection);
 
             List<String> actions = processEventByType(request.getEvent(), request.getAction(),
                     request.getPayload(), connection);
+
+            log.info("Webhook processing completed. Actions performed: {}", actions);
 
             return WebhookEventResponse.builder()
                     .processed(true)
@@ -190,11 +218,15 @@ public class GitHubWebhookService {
             JsonNode commits = payload.get("commits");
             String branch = payload.get("ref").asText().replace("refs/heads/", "");
 
+            log.info("Processing push event for branch: {} with {} commits",
+                    branch, commits != null ? commits.size() : 0);
+
             if (commits != null && commits.isArray()) {
                 for (JsonNode commitNode : commits) {
                     GitHubCommit commit = processCommitFromWebhook(commitNode, branch, connection);
                     if (commit != null) {
                         actions.add("Processed commit: " + commit.getShortSha());
+                        log.info("Successfully processed commit: {}", commit.getShortSha());
 
                         taskLinkingService.linkCommitToTasks(commit);
                     }
@@ -217,6 +249,7 @@ public class GitHubWebhookService {
 
             if (pullRequest != null) {
                 actions.add("Processed PR #" + pullRequest.getPrNumber() + " - " + action);
+                log.info("Successfully processed PR #{} - {}", pullRequest.getPrNumber(), action);
 
                 taskLinkingService.linkPullRequestToTasks(pullRequest);
 
@@ -265,6 +298,7 @@ public class GitHubWebhookService {
             String sha = commitNode.get("id").asText();
 
             if (commitRepository.existsByCommitSha(sha)) {
+                log.info("Commit {} already exists, skipping", sha);
                 return commitRepository.findByCommitSha(sha).orElse(null);
             }
 
@@ -293,7 +327,10 @@ public class GitHubWebhookService {
                         commitNode.get("modified").size());
             }
 
-            return commitRepository.save(commit);
+            GitHubCommit savedCommit = commitRepository.save(commit);
+            log.info("Saved new commit: {} with message: {}", sha, commit.getCommitMessage());
+
+            return savedCommit;
 
         } catch (Exception e) {
             log.error("Failed to process commit from webhook: {}", e.getMessage());
@@ -313,8 +350,10 @@ public class GitHubWebhookService {
             if (existingPR.isPresent()) {
                 pullRequest = existingPR.get();
                 updatePullRequestFromNode(pullRequest, prNode, action);
+                log.info("Updated existing PR #{}", prNumber);
             } else {
                 pullRequest = createPullRequestFromNode(prNode, connection);
+                log.info("Created new PR #{}", prNumber);
             }
 
             return pullRequestRepository.save(pullRequest);
@@ -409,10 +448,23 @@ public class GitHubWebhookService {
 
             if (repository != null && repository.has("full_name")) {
                 String repositoryFullName = repository.get("full_name").asText();
-                return connectionRepository.findAll().stream()
+                log.info("Looking for connection with repository: {}", repositoryFullName);
+
+                Optional<GitHubConnection> connection = connectionRepository.findAll().stream()
                         .filter(conn -> conn.getRepositoryFullName().equals(repositoryFullName))
                         .filter(conn -> conn.getStatus() == GitHubConnectionStatus.ACTIVE)
                         .findFirst();
+
+                if (connection.isPresent()) {
+                    log.info("Found connection ID: {}", connection.get().getId());
+                    log.info("Connection webhook secret exists: {}", connection.get().getWebhookSecret() != null);
+                    log.info("Connection webhook secret length: {}",
+                            connection.get().getWebhookSecret() != null ? connection.get().getWebhookSecret().length() : "null");
+                } else {
+                    log.warn("No active connection found for repository: {}", repositoryFullName);
+                }
+
+                return connection;
             }
 
         } catch (Exception e) {
@@ -423,17 +475,51 @@ public class GitHubWebhookService {
     }
 
     private boolean verifyWebhookSignature(Object payload, String signature, String secret) {
-        if (signature == null || secret == null) {
+        log.info("=== Webhook Signature Verification Debug ===");
+        log.info("Received signature: {}", signature);
+        log.info("Stored secret exists: {}", secret != null);
+        log.info("Stored secret length: {}", secret != null ? secret.length() : "null");
+
+        if (signature == null) {
+            log.warn("No signature provided by GitHub");
+            return false;
+        }
+
+        if (secret == null) {
+            log.warn("No secret stored in connection");
             return false;
         }
 
         try {
             String payloadString = objectMapper.writeValueAsString(payload);
-            String expectedSignature = "sha256=" + calculateHmacSha256(payloadString, secret);
-            return signature.equals(expectedSignature);
+            log.info("Payload string length: {}", payloadString.length());
+            log.info("Payload string preview: {}", payloadString.length() > 100 ?
+                    payloadString.substring(0, 100) + "..." : payloadString);
+
+            String calculatedHash = calculateHmacSha256(payloadString, secret);
+            String expectedSignature = "sha256=" + calculatedHash;
+
+            log.info("Calculated HMAC hash: {}", calculatedHash);
+            log.info("Expected full signature: {}", expectedSignature);
+            log.info("Received signature:     {}", signature);
+            log.info("Signatures match: {}", signature.equals(expectedSignature));
+
+            boolean matches = signature.equals(expectedSignature);
+
+            if (!matches) {
+                log.warn("Signature verification failed!");
+                log.warn("This could be due to:");
+                log.warn("1. Wrong secret stored in database");
+                log.warn("2. GitHub using different secret than stored");
+                log.warn("3. Payload modification during transport");
+            } else {
+                log.info("Signature verification successful!");
+            }
+
+            return matches;
 
         } catch (Exception e) {
-            log.error("Failed to verify webhook signature: {}", e.getMessage());
+            log.error("Failed to verify webhook signature: {}", e.getMessage(), e);
             return false;
         }
     }
