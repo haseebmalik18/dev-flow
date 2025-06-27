@@ -39,7 +39,7 @@ public class GitHubOAuthService {
     @Value("${github.oauth.redirect-uri:}")
     private String configuredRedirectUri;
 
-    @Value("${github.oauth.scope:repo,user:email}")
+    @Value("${github.oauth.scope:repo,user:email,admin:repo_hook}")
     private String scope;
 
     @Value("${app.base-url:}")
@@ -206,7 +206,11 @@ public class GitHubOAuthService {
                     "https://api.github.com/user", HttpMethod.GET, entity, JsonNode.class
             );
 
-            return response.getStatusCode() == HttpStatus.OK;
+            if (response.getStatusCode() == HttpStatus.OK) {
+                validateTokenPermissions(accessToken);
+                return true;
+            }
+            return false;
 
         } catch (Exception e) {
             log.debug("❌ Invalid GitHub access token: {}", e.getMessage());
@@ -242,125 +246,94 @@ public class GitHubOAuthService {
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            // Test basic API access first
-            ResponseEntity<JsonNode> userResponse = restTemplate.exchange(
-                    "https://api.github.com/user", HttpMethod.GET, entity, JsonNode.class
-            );
-
-            if (userResponse.getStatusCode() != HttpStatus.OK) {
-                log.error("❌ Token validation failed - cannot access GitHub /user endpoint: {}", userResponse.getStatusCode());
-                throw new AuthException("GitHub token is invalid or expired. Please re-authorize.");
-            }
-
-            log.info("✅ Token successfully accessed GitHub /user endpoint");
-
-            // Get scope information (will be empty for GitHub Apps)
-            ResponseEntity<String> headResponse = restTemplate.exchange(
+            ResponseEntity<String> response = restTemplate.exchange(
                     "https://api.github.com/user", HttpMethod.HEAD, entity, String.class
             );
 
-            String scopes = headResponse.getHeaders().getFirst("X-OAuth-Scopes");
+            String scopes = response.getHeaders().getFirst("X-OAuth-Scopes");
+            String acceptedScopes = response.getHeaders().getFirst("X-Accepted-OAuth-Scopes");
 
-            log.info("=== 📋 GitHub Token Analysis ===");
+            log.info("=== 📋 GitHub Token Scope Analysis ===");
             log.info("🎯 Requested scope in config: {}", scope);
-            log.info("🔑 Token scopes from GitHub: '{}'", scopes);
+            log.info("🔑 Token scopes from GitHub: {}", scopes);
+            log.info("✅ Accepted scopes for /user endpoint: {}", acceptedScopes);
 
-            // GitHub Apps typically return empty scopes - this is NORMAL
             if (scopes == null || scopes.trim().isEmpty()) {
-                log.info("ℹ️ Empty scopes detected - this is NORMAL for GitHub Apps");
-                log.info("ℹ️ GitHub Apps use installation-based permissions instead of OAuth scopes");
+                log.warn("⚠️ Could not determine GitHub token scopes from headers");
+                log.warn("⚠️ Response status: {}", response.getStatusCode());
+                log.warn("⚠️ All response headers: {}", response.getHeaders());
 
-                // Test actual API capabilities instead of relying on scope headers
-                log.info("🧪 Testing GitHub App installation permissions...");
-
-                // Test 1: Repository access
                 try {
-                    ResponseEntity<JsonNode> reposResponse = restTemplate.exchange(
-                            "https://api.github.com/user/repos?per_page=1", HttpMethod.GET, entity, JsonNode.class
+                    ResponseEntity<JsonNode> userResponse = restTemplate.exchange(
+                            "https://api.github.com/user", HttpMethod.GET, entity, JsonNode.class
                     );
-
-                    if (reposResponse.getStatusCode() == HttpStatus.OK) {
-                        log.info("✅ GitHub App has repository access");
-
-                        // Test 2: Installation access (GitHub Apps specific)
-                        try {
-                            ResponseEntity<JsonNode> installationsResponse = restTemplate.exchange(
-                                    "https://api.github.com/user/installations", HttpMethod.GET, entity, JsonNode.class
-                            );
-
-                            if (installationsResponse.getStatusCode() == HttpStatus.OK && installationsResponse.getBody() != null) {
-                                JsonNode installations = installationsResponse.getBody().get("installations");
-                                if (installations != null && installations.isArray() && installations.size() > 0) {
-                                    log.info("✅ GitHub App is properly installed ({} installations found)", installations.size());
-
-                                    // Log installation details for debugging
-                                    for (JsonNode installation : installations) {
-                                        String account = installation.has("account") ?
-                                                installation.get("account").get("login").asText() : "unknown";
-                                        log.info("   📱 Installation on account: {}", account);
-                                    }
-
-                                } else {
-                                    log.warn("⚠️ No GitHub App installations found");
-                                }
-                            }
-                        } catch (Exception e) {
-                            log.info("ℹ️ Could not check installations (this is okay): {}", e.getMessage());
-                        }
-
-                        // Test 3: Check if we can access a specific repository's webhooks (this tests webhook permissions)
-                        log.info("🪝 GitHub App webhook permissions will be tested during actual webhook creation");
-
-                        log.info("✅ GitHub App validation passed - proceeding with connection");
+                    if (userResponse.getStatusCode() == HttpStatus.OK) {
+                        log.info("✅ Token appears to work (can access /user endpoint), proceeding despite missing scope headers");
                         return;
-
-                    } else {
-                        log.error("❌ GitHub App cannot access repositories: HTTP {}", reposResponse.getStatusCode());
                     }
                 } catch (Exception e) {
-                    log.error("❌ GitHub App failed repository access test: {} - {}", e.getClass().getSimpleName(), e.getMessage());
-
-                    if (e.getMessage().contains("403")) {
-                        log.error("❌ HTTP 403: GitHub App installed but lacks repository permissions");
-                        log.error("💡 Fix: Go to https://github.com/settings/installations and grant repository access");
-                    } else if (e.getMessage().contains("401")) {
-                        log.error("❌ HTTP 401: Token is invalid or GitHub App not properly authorized");
-                        log.error("💡 Fix: Re-authorize the GitHub App");
-                    }
-
-                    throw new AuthException(
-                            "GitHub App missing repository access. Please check installation at https://github.com/settings/installations"
-                    );
+                    log.error("❌ Token validation failed - cannot access GitHub API: {}", e.getMessage());
+                    throw new AuthException("GitHub token is invalid or expired. Please re-authorize.");
                 }
 
-                throw new AuthException(
-                        "GitHub App validation failed. Please check your app installation and permissions."
-                );
+                log.warn("⚠️ Proceeding without scope validation due to missing headers");
+                return;
             }
 
-            // If we somehow have OAuth scopes (hybrid setup), validate them
-            log.info("ℹ️ Found OAuth scopes (unusual for GitHub Apps): {}", scopes);
             List<String> scopeList = Arrays.asList(scopes.split(",\\s*"));
+            log.info("📝 Parsed token scopes: {}", scopeList);
 
-            boolean hasRepoAccess = scopeList.contains("repo") || scopeList.contains("public_repo");
-            boolean hasWebhookAccess = scopeList.contains("admin:repo_hook") || scopeList.contains("write:repo_hook");
+            boolean hasRepoScope = scopeList.contains("repo");
+            boolean hasPublicRepoScope = scopeList.contains("public_repo");
+            boolean hasRepoStatusScope = scopeList.contains("repo:status");
+            boolean hasRepoDeploymentScope = scopeList.contains("repo_deployment");
 
-            if (!hasRepoAccess) {
-                throw new AuthException("OAuth scopes missing repository access: " + scopes);
+            boolean hasAdminRepoHookScope = scopeList.contains("admin:repo_hook");
+            boolean hasWriteRepoHookScope = scopeList.contains("write:repo_hook");
+            boolean hasReadRepoHookScope = scopeList.contains("read:repo_hook");
+
+            log.info("🔍 Detailed scope validation results:");
+            log.info("  📁 Repository access:");
+            log.info("    - Has 'repo' scope: {}", hasRepoScope);
+            log.info("    - Has 'public_repo' scope: {}", hasPublicRepoScope);
+            log.info("    - Has 'repo:status' scope: {}", hasRepoStatusScope);
+            log.info("    - Has 'repo_deployment' scope: {}", hasRepoDeploymentScope);
+            log.info("  🪝 Webhook access:");
+            log.info("    - Has 'admin:repo_hook' scope: {}", hasAdminRepoHookScope);
+            log.info("    - Has 'write:repo_hook' scope: {}", hasWriteRepoHookScope);
+            log.info("    - Has 'read:repo_hook' scope: {}", hasReadRepoHookScope);
+
+            boolean hasAnyRepoAccess = hasRepoScope || hasPublicRepoScope || hasRepoStatusScope || hasRepoDeploymentScope;
+
+            if (!hasAnyRepoAccess) {
+                String message = String.format(
+                        "GitHub token missing repository access. Token has scopes: [%s]. " +
+                                "Required: 'repo', 'public_repo', 'repo:status', or 'repo_deployment'. " +
+                                "Current OAuth scope config: '%s'. " +
+                                "Please check your GitHub App permissions and re-authorize.",
+                        scopes, scope
+                );
+                log.error("❌ {}", message);
+                throw new AuthException(message);
             }
 
-            if (!hasWebhookAccess) {
-                log.warn("⚠️ OAuth scopes missing webhook access - webhook creation may fail");
+            boolean hasAnyWebhookAccess = hasAdminRepoHookScope || hasWriteRepoHookScope || hasReadRepoHookScope;
+            if (!hasAnyWebhookAccess) {
+                log.warn("⚠️ GitHub token missing webhook permissions. Webhook creation may fail.");
+                log.warn("⚠️ Token scopes: [{}]", scopes);
+                log.warn("⚠️ Consider updating your GitHub App permissions to include webhook access");
+            } else {
+                log.info("✅ Token has webhook permissions: admin={}, write={}, read={}",
+                        hasAdminRepoHookScope, hasWriteRepoHookScope, hasReadRepoHookScope);
             }
 
-            log.info("✅ OAuth scope validation passed");
+            log.info("✅ Token validation passed - has repository access: {}", hasAnyRepoAccess);
 
         } catch (AuthException e) {
             throw e;
         } catch (Exception e) {
             log.error("❌ Failed to validate GitHub token permissions: {}", e.getMessage(), e);
-            // For GitHub Apps, we're more lenient - let webhook creation fail later if needed
-            log.warn("⚠️ Proceeding despite validation error - GitHub App permissions will be tested during webhook creation");
+            log.warn("⚠️ Proceeding without token validation due to error");
         }
     }
 
