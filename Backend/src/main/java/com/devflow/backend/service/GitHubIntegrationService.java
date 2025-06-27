@@ -39,8 +39,14 @@ public class GitHubIntegrationService {
     public ConnectionResponse createConnection(CreateConnectionRequest request, User user) {
         Project project = findProjectWithAccess(request.getProjectId(), user);
 
-        if (connectionRepository.existsActiveConnectionForProjectAndRepository(
-                project, request.getRepositoryFullName())) {
+        boolean activeConnectionExists = connectionRepository
+                .existsByProjectAndRepositoryFullNameAndStatus(
+                        project,
+                        request.getRepositoryFullName(),
+                        GitHubConnectionStatus.ACTIVE
+                );
+
+        if (activeConnectionExists) {
             throw new AuthException("Repository is already connected to this project");
         }
 
@@ -104,7 +110,9 @@ public class GitHubIntegrationService {
     public List<ConnectionResponse> getProjectConnections(Long projectId, User user) {
         Project project = findProjectWithAccess(projectId, user);
 
-        List<GitHubConnection> connections = connectionRepository.findByProjectOrderByCreatedAtDesc(project);
+        List<GitHubConnection> connections = connectionRepository
+                .findByProjectAndStatusOrderByCreatedAtDesc(project, GitHubConnectionStatus.ACTIVE);
+
         return connections.stream()
                 .map(this::mapToConnectionResponse)
                 .collect(Collectors.toList());
@@ -314,7 +322,8 @@ public class GitHubIntegrationService {
         Project project = findProjectWithAccess(projectId, user);
         LocalDateTime since = LocalDateTime.now().minusDays(30);
 
-        List<GitHubConnection> connections = connectionRepository.findByProjectOrderByCreatedAtDesc(project);
+        List<GitHubConnection> connections = connectionRepository
+                .findByProjectAndStatusOrderByCreatedAtDesc(project, GitHubConnectionStatus.ACTIVE);
         ConnectionStatistics connectionStats = buildConnectionStatistics(connections);
 
         @SuppressWarnings("unchecked")

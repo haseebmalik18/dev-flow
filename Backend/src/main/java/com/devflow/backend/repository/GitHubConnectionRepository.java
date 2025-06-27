@@ -1,9 +1,8 @@
-// GitHubConnectionRepository.java
 package com.devflow.backend.repository;
 
-import com.devflow.backend.entity.*;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import com.devflow.backend.entity.GitHubConnection;
+import com.devflow.backend.entity.GitHubConnectionStatus;
+import com.devflow.backend.entity.Project;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -17,120 +16,56 @@ import java.util.Optional;
 @Repository
 public interface GitHubConnectionRepository extends JpaRepository<GitHubConnection, Long> {
 
-    // Find connections by project
     List<GitHubConnection> findByProjectOrderByCreatedAtDesc(Project project);
 
-    // Find connection by project and repository
-    Optional<GitHubConnection> findByProjectAndRepositoryFullName(Project project, String repositoryFullName);
+    List<GitHubConnection> findByProjectAndStatusOrderByCreatedAtDesc(Project project, GitHubConnectionStatus status);
 
-    // Find connections by user
-    @Query("""
-        SELECT gc FROM GitHubConnection gc 
-        WHERE gc.connectedBy = :user 
-        ORDER BY gc.createdAt DESC
-    """)
-    List<GitHubConnection> findByConnectedByOrderByCreatedAtDesc(@Param("user") User user);
-
-    // Find connections by status
     List<GitHubConnection> findByStatusOrderByCreatedAtDesc(GitHubConnectionStatus status);
 
-    // Find connections by webhook status
-    List<GitHubConnection> findByWebhookStatusOrderByCreatedAtDesc(GitHubWebhookStatus webhookStatus);
+    boolean existsByProjectAndRepositoryFullNameAndStatus(Project project, String repositoryFullName, GitHubConnectionStatus status);
 
-    // Find connections with errors
-    @Query("""
-        SELECT gc FROM GitHubConnection gc 
-        WHERE gc.errorCount > 0 
-        ORDER BY gc.errorCount DESC, gc.updatedAt DESC
-    """)
-    List<GitHubConnection> findConnectionsWithErrors();
+    boolean existsActiveConnectionForProjectAndRepository(Project project, String repositoryFullName);
 
-    // Find stale connections (no webhook activity)
-    @Query("""
-        SELECT gc FROM GitHubConnection gc 
-        WHERE gc.status = 'ACTIVE' 
-        AND (gc.lastWebhookAt IS NULL OR gc.lastWebhookAt < :threshold)
-        ORDER BY gc.lastWebhookAt ASC NULLS FIRST
-    """)
+    Optional<GitHubConnection> findByRepositoryFullNameAndStatus(String repositoryFullName, GitHubConnectionStatus status);
+
+    List<GitHubConnection> findByWebhookStatusAndLastWebhookAtBefore(String webhookStatus, LocalDateTime before);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.status = :status AND gc.lastWebhookAt < :threshold")
     List<GitHubConnection> findStaleConnections(@Param("threshold") LocalDateTime threshold);
 
-    // Find connections by installation ID
-    List<GitHubConnection> findByInstallationId(Long installationId);
+    @Query("SELECT COUNT(gc) as totalConnections, " +
+            "SUM(CASE WHEN gc.status = 'ACTIVE' THEN 1 ELSE 0 END) as activeConnections, " +
+            "SUM(CASE WHEN gc.webhookStatus = 'ACTIVE' THEN 1 ELSE 0 END) as webhooksActive, " +
+            "SUM(CASE WHEN gc.errorCount > 0 THEN 1 ELSE 0 END) as connectionsWithErrors, " +
+            "SUM(CASE WHEN gc.lastWebhookAt > :recentThreshold THEN 1 ELSE 0 END) as recentActivity " +
+            "FROM GitHubConnection gc")
+    Object getHealthStatistics(@Param("recentThreshold") LocalDateTime recentThreshold);
 
-    // Find connection by webhook ID
-    Optional<GitHubConnection> findByWebhookId(String webhookId);
-
-    // Check if repository is already connected to project
-    @Query("""
-        SELECT COUNT(gc) > 0 FROM GitHubConnection gc 
-        WHERE gc.project = :project 
-        AND gc.repositoryFullName = :repositoryFullName 
-        AND gc.status != 'DISCONNECTED'
-    """)
-    boolean existsActiveConnectionForProjectAndRepository(
-            @Param("project") Project project,
-            @Param("repositoryFullName") String repositoryFullName
-    );
-
-    // Find user's accessible connections
-    @Query("""
-        SELECT gc FROM GitHubConnection gc 
-        JOIN gc.project p 
-        LEFT JOIN p.members pm 
-        WHERE (p.owner = :user OR pm.user = :user) 
-        AND gc.status = 'ACTIVE'
-        ORDER BY gc.createdAt DESC
-    """)
-    List<GitHubConnection> findAccessibleConnectionsByUser(@Param("user") User user);
-
-    // Update webhook status
     @Modifying
-    @Query("""
-        UPDATE GitHubConnection gc 
-        SET gc.webhookStatus = :status, gc.updatedAt = CURRENT_TIMESTAMP 
-        WHERE gc.id = :connectionId
-    """)
-    void updateWebhookStatus(@Param("connectionId") Long connectionId, @Param("status") GitHubWebhookStatus status);
-
-    // Update last webhook received time
-    @Modifying
-    @Query("""
-        UPDATE GitHubConnection gc 
-        SET gc.lastWebhookAt = :timestamp, gc.errorCount = 0, gc.errorMessage = NULL, gc.updatedAt = CURRENT_TIMESTAMP 
-        WHERE gc.id = :connectionId
-    """)
-    void updateLastWebhookReceived(@Param("connectionId") Long connectionId, @Param("timestamp") LocalDateTime timestamp);
-
-    // Increment error count
-    @Modifying
-    @Query("""
-        UPDATE GitHubConnection gc 
-        SET gc.errorCount = COALESCE(gc.errorCount, 0) + 1, 
-            gc.errorMessage = :errorMessage, 
-            gc.updatedAt = CURRENT_TIMESTAMP 
-        WHERE gc.id = :connectionId
-    """)
-    void incrementErrorCount(@Param("connectionId") Long connectionId, @Param("errorMessage") String errorMessage);
-
-    // Get health statistics
-    @Query("""
-        SELECT NEW map(
-            COUNT(gc) as total,
-            COUNT(CASE WHEN gc.status = 'ACTIVE' THEN 1 END) as active,
-            COUNT(CASE WHEN gc.webhookStatus = 'ACTIVE' THEN 1 END) as webhooksActive,
-            COUNT(CASE WHEN gc.errorCount > 0 THEN 1 END) as withErrors,
-            COUNT(CASE WHEN gc.lastWebhookAt > :threshold THEN 1 END) as recentActivity
-        ) 
-        FROM GitHubConnection gc
-    """)
-    Object getHealthStatistics(@Param("threshold") LocalDateTime threshold);
-
-    // Clean up old disconnected connections
-    @Modifying
-    @Query("""
-        DELETE FROM GitHubConnection gc 
-        WHERE gc.status = 'DISCONNECTED' 
-        AND gc.updatedAt < :cutoff
-    """)
+    @Query("DELETE FROM GitHubConnection gc WHERE gc.status = 'DISCONNECTED' AND gc.updatedAt < :cutoff")
     void deleteOldDisconnectedConnections(@Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.project.id = :projectId AND gc.status = 'ACTIVE'")
+    List<GitHubConnection> findActiveConnectionsByProjectId(@Param("projectId") Long projectId);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.repositoryFullName = :repositoryFullName AND gc.status = 'ACTIVE'")
+    Optional<GitHubConnection> findActiveConnectionByRepository(@Param("repositoryFullName") String repositoryFullName);
+
+    @Query("SELECT COUNT(gc) FROM GitHubConnection gc WHERE gc.project.id = :projectId AND gc.status = 'ACTIVE'")
+    long countActiveConnectionsByProject(@Param("projectId") Long projectId);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.connectedBy.id = :userId ORDER BY gc.createdAt DESC")
+    List<GitHubConnection> findByConnectedByIdOrderByCreatedAtDesc(@Param("userId") Long userId);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.webhookId = :webhookId")
+    Optional<GitHubConnection> findByWebhookId(@Param("webhookId") String webhookId);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.installationId = :installationId")
+    List<GitHubConnection> findByInstallationId(@Param("installationId") Long installationId);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.errorCount >= :errorThreshold")
+    List<GitHubConnection> findConnectionsWithErrors(@Param("errorThreshold") Integer errorThreshold);
+
+    @Query("SELECT gc FROM GitHubConnection gc WHERE gc.lastSyncAt IS NULL OR gc.lastSyncAt < :threshold")
+    List<GitHubConnection> findConnectionsNeedingSync(@Param("threshold") LocalDateTime threshold);
 }

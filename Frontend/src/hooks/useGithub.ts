@@ -80,11 +80,24 @@ export const useCreateGitHubConnection = () => {
     mutationFn: (data: CreateConnectionRequest) =>
       gitHubService.createConnection(data),
     onSuccess: (response, variables) => {
+      // Invalidate all GitHub-related queries
+      queryClient.invalidateQueries({
+        queryKey: ["github"],
+      });
+
+      // Specifically invalidate project connections
       queryClient.invalidateQueries({
         queryKey: ["github", "connections", "project", variables.projectId],
       });
+
+      // Invalidate project queries
       queryClient.invalidateQueries({
         queryKey: ["project", variables.projectId],
+      });
+
+      // Force refetch connections
+      queryClient.refetchQueries({
+        queryKey: ["github", "connections", "project", variables.projectId],
       });
 
       toast.success(
@@ -106,11 +119,29 @@ export const useDeleteGitHubConnection = () => {
     mutationFn: (connectionId: number) =>
       gitHubService.deleteConnection(connectionId),
     onSuccess: (response) => {
+      // Invalidate all GitHub-related queries
+      queryClient.invalidateQueries({
+        queryKey: ["github"],
+      });
+
+      // Specifically invalidate connection queries
       queryClient.invalidateQueries({
         queryKey: ["github", "connections"],
       });
+
+      // Invalidate project queries too
       queryClient.invalidateQueries({
         queryKey: ["project"],
+      });
+
+      // Force refetch of all GitHub data
+      queryClient.refetchQueries({
+        queryKey: ["github"],
+      });
+
+      // Remove all cached data and force fresh fetch
+      queryClient.removeQueries({
+        queryKey: ["github", "connections"],
       });
 
       toast.success(
@@ -132,9 +163,17 @@ export const useSyncGitHubConnection = () => {
     mutationFn: (connectionId: number) =>
       gitHubService.syncConnection(connectionId),
     onSuccess: (response, connectionId) => {
+      // Invalidate connection-specific queries
       queryClient.invalidateQueries({
         queryKey: ["github", "connection", connectionId],
       });
+
+      // Invalidate all connections
+      queryClient.invalidateQueries({
+        queryKey: ["github", "connections"],
+      });
+
+      // Invalidate commits and PRs
       queryClient.invalidateQueries({
         queryKey: ["github", "commits"],
       });
@@ -190,11 +229,19 @@ export const useCreateCommitTaskLink = () => {
       data: CreateTaskLinkRequest;
     }) => gitHubService.createCommitTaskLink(commitId, data),
     onSuccess: (response, variables) => {
+      // Invalidate task-specific commits
       queryClient.invalidateQueries({
         queryKey: ["github", "commits", "task", variables.data.taskId],
       });
+
+      // Invalidate task data
       queryClient.invalidateQueries({
         queryKey: ["task", variables.data.taskId],
+      });
+
+      // Force refetch task commits
+      queryClient.refetchQueries({
+        queryKey: ["github", "commits", "task", variables.data.taskId],
       });
 
       toast.success(response.message || "Commit linked to task successfully!");
@@ -243,11 +290,19 @@ export const useCreatePRTaskLink = () => {
       data: CreateTaskLinkRequest;
     }) => gitHubService.createPRTaskLink(prId, data),
     onSuccess: (response, variables) => {
+      // Invalidate task-specific PRs
       queryClient.invalidateQueries({
         queryKey: ["github", "pull-requests", "task", variables.data.taskId],
       });
+
+      // Invalidate task data
       queryClient.invalidateQueries({
         queryKey: ["task", variables.data.taskId],
+      });
+
+      // Force refetch task PRs
+      queryClient.refetchQueries({
+        queryKey: ["github", "pull-requests", "task", variables.data.taskId],
       });
 
       toast.success(
