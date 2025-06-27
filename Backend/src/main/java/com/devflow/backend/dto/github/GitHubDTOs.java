@@ -1,4 +1,3 @@
-
 package com.devflow.backend.dto.github;
 
 import com.devflow.backend.entity.*;
@@ -13,7 +12,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public class GitHubDTOs {
-
 
     @Data
     @Builder
@@ -31,7 +29,6 @@ public class GitHubDTOs {
 
         private Long repositoryId;
         private Long installationId;
-        private String accessToken;
     }
 
     @Data
@@ -84,7 +81,6 @@ public class GitHubDTOs {
         private LocalDateTime lastCheck;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -107,7 +103,6 @@ public class GitHubDTOs {
         private Integer changedFiles;
         private LocalDateTime createdAt;
 
-
         private ConnectionSummary connection;
         private List<TaskLinkSummary> taskLinks;
         private Boolean isFromMainBranch;
@@ -129,7 +124,6 @@ public class GitHubDTOs {
         private Integer taskLinksCount;
         private Boolean isFromMainBranch;
     }
-
 
     @Data
     @Builder
@@ -162,7 +156,6 @@ public class GitHubDTOs {
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
-
         private ConnectionSummary connection;
         private List<TaskLinkSummary> taskLinks;
         private Boolean isOpen;
@@ -189,7 +182,6 @@ public class GitHubDTOs {
         private Boolean isOpen;
         private Boolean isMerged;
     }
-
 
     @Data
     @Builder
@@ -218,7 +210,6 @@ public class GitHubDTOs {
         private Boolean autoStatusUpdate;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -241,7 +232,6 @@ public class GitHubDTOs {
         private List<String> actions;
         private LocalDateTime processedAt;
     }
-
 
     @Data
     @Builder
@@ -275,7 +265,6 @@ public class GitHubDTOs {
         private Integer totalCount;
         private Boolean hasMore;
     }
-
 
     @Data
     @Builder
@@ -314,7 +303,6 @@ public class GitHubDTOs {
         private String htmlUrl;
         private String type;
     }
-
 
     @Data
     @Builder
@@ -380,7 +368,6 @@ public class GitHubDTOs {
         private Long resolves;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -425,7 +412,6 @@ public class GitHubDTOs {
         private Boolean isOverdue;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -455,7 +441,6 @@ public class GitHubDTOs {
         private Integer totalPages;
         private Boolean hasMore;
     }
-
 
     @Data
     @Builder

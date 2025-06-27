@@ -1,4 +1,3 @@
-
 package com.devflow.backend.service;
 
 import com.devflow.backend.dto.github.GitHubDTOs.*;
@@ -35,26 +34,28 @@ public class GitHubIntegrationService {
     private final ActivityService activityService;
     private final GitHubWebhookService webhookService;
     private final GitHubTaskLinkingService taskLinkingService;
+    private final GitHubUserTokenRepository userTokenRepository;
 
-    /**
-     * Create a new GitHub connection for a project
-     */
     public ConnectionResponse createConnection(CreateConnectionRequest request, User user) {
         Project project = findProjectWithAccess(request.getProjectId(), user);
-
 
         if (connectionRepository.existsActiveConnectionForProjectAndRepository(
                 project, request.getRepositoryFullName())) {
             throw new AuthException("Repository is already connected to this project");
         }
 
-        try {
+        GitHubUserToken userToken = userTokenRepository.findByUserAndActiveTrue(user)
+                .orElseThrow(() -> new AuthException("GitHub access token not found. Please reconnect your GitHub account."));
 
+        if (userToken.isExpired()) {
+            throw new AuthException("GitHub access token has expired. Please reconnect your GitHub account.");
+        }
+
+        try {
             String webhookId = webhookService.createWebhook(
                     request.getRepositoryFullName(),
-                    request.getAccessToken()
+                    userToken.getAccessToken()
             );
-
 
             GitHubConnection connection = GitHubConnection.builder()
                     .project(project)
@@ -70,13 +71,11 @@ public class GitHubIntegrationService {
 
             connection = connectionRepository.save(connection);
 
-
             activityService.createProjectUpdatedActivity(
                     user,
                     project,
                     java.util.Map.of("githubConnection", "Repository " + request.getRepositoryFullName() + " connected")
             );
-
 
             syncConnectionAsync(connection.getId());
 
@@ -91,9 +90,6 @@ public class GitHubIntegrationService {
         }
     }
 
-    /**
-     * Get all connections for a project
-     */
     @Transactional(readOnly = true)
     public List<ConnectionResponse> getProjectConnections(Long projectId, User user) {
         Project project = findProjectWithAccess(projectId, user);
@@ -104,18 +100,12 @@ public class GitHubIntegrationService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get connection by ID
-     */
     @Transactional(readOnly = true)
     public ConnectionResponse getConnection(Long connectionId, User user) {
         GitHubConnection connection = findConnectionWithAccess(connectionId, user);
         return mapToConnectionResponse(connection);
     }
 
-    /**
-     * Delete a GitHub connection
-     */
     public void deleteConnection(Long connectionId, User user) {
         GitHubConnection connection = findConnectionWithAccess(connectionId, user);
 
@@ -124,7 +114,14 @@ public class GitHubIntegrationService {
         }
 
         try {
-            webhookService.deleteWebhook(connection.getRepositoryFullName(), connection.getWebhookId());
+            GitHubUserToken userToken = userTokenRepository.findByUserAndActiveTrue(user)
+                    .orElse(null);
+
+            if (userToken != null && !userToken.isExpired()) {
+                webhookService.deleteWebhook(connection.getRepositoryFullName(), connection.getWebhookId());
+            } else {
+                log.warn("Cannot delete webhook for connection {} - no valid GitHub token", connection.getId());
+            }
 
             connection.setStatus(GitHubConnectionStatus.DISCONNECTED);
             connection.setWebhookStatus(GitHubWebhookStatus.INACTIVE);
@@ -145,9 +142,6 @@ public class GitHubIntegrationService {
         }
     }
 
-    /**
-     * Get commits for a project
-     */
     @Transactional(readOnly = true)
     public Page<CommitResponse> getProjectCommits(Long projectId, User user, int page, int size) {
         Project project = findProjectWithAccess(projectId, user);
@@ -158,9 +152,6 @@ public class GitHubIntegrationService {
         return commits.map(this::mapToCommitResponse);
     }
 
-    /**
-     * Get commits for a task
-     */
     @Transactional(readOnly = true)
     public List<CommitResponse> getTaskCommits(Long taskId, User user) {
         Task task = findTaskWithAccess(taskId, user);
@@ -171,9 +162,6 @@ public class GitHubIntegrationService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get pull requests for a project
-     */
     @Transactional(readOnly = true)
     public Page<PullRequestResponse> getProjectPullRequests(Long projectId, User user, int page, int size) {
         Project project = findProjectWithAccess(projectId, user);
@@ -184,9 +172,6 @@ public class GitHubIntegrationService {
         return pullRequests.map(this::mapToPullRequestResponse);
     }
 
-    /**
-     * Get pull requests for a task
-     */
     @Transactional(readOnly = true)
     public List<PullRequestResponse> getTaskPullRequests(Long taskId, User user) {
         Task task = findTaskWithAccess(taskId, user);
@@ -197,9 +182,6 @@ public class GitHubIntegrationService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Search GitHub content
-     */
     @Transactional(readOnly = true)
     public GitHubSearchResponse search(GitHubSearchRequest request, User user) {
         if (request.getProjectId() != null) {
@@ -209,9 +191,6 @@ public class GitHubIntegrationService {
         return taskLinkingService.search(request);
     }
 
-    /**
-     * Manual sync of a connection
-     */
     public SyncResponse syncConnection(Long connectionId, User user) {
         GitHubConnection connection = findConnectionWithAccess(connectionId, user);
 
@@ -250,9 +229,6 @@ public class GitHubIntegrationService {
         }
     }
 
-    /**
-     * Create manual task link
-     */
     public TaskLinkSummary createCommitTaskLink(Long commitId, CreateTaskLinkRequest request, User user) {
         GitHubCommit commit = commitRepository.findById(commitId)
                 .orElseThrow(() -> new AuthException("Commit not found"));
@@ -289,9 +265,6 @@ public class GitHubIntegrationService {
         return mapToTaskLinkSummary(link);
     }
 
-    /**
-     * Create manual PR task link
-     */
     public TaskLinkSummary createPRTaskLink(Long prId, CreateTaskLinkRequest request, User user) {
         GitHubPullRequest pullRequest = pullRequestRepository.findById(prId)
                 .orElseThrow(() -> new AuthException("Pull request not found"));
@@ -326,9 +299,6 @@ public class GitHubIntegrationService {
         return mapToTaskLinkSummary(link);
     }
 
-    /**
-     * Get GitHub statistics for a project
-     */
     @Transactional(readOnly = true)
     public GitHubStatistics getProjectStatistics(Long projectId, User user) {
         Project project = findProjectWithAccess(projectId, user);
@@ -347,7 +317,6 @@ public class GitHubIntegrationService {
                 pullRequestRepository.getPRStatistics(project, since);
         PullRequestStatistics prStats = buildPRStatistics(prStatsRaw);
 
-
         List<GitHubCommitTaskLink> commitLinks = commitTaskLinkRepository.findByProject(project);
         List<GitHubPRTaskLink> prLinks = prTaskLinkRepository.findByProject(project);
         TaskLinkStatistics linkStats = buildTaskLinkStatistics(commitLinks, prLinks);
@@ -359,8 +328,6 @@ public class GitHubIntegrationService {
                 .taskLinks(linkStats)
                 .build();
     }
-
-
 
     @Async
     public void syncConnectionAsync(Long connectionId) {
@@ -375,8 +342,6 @@ public class GitHubIntegrationService {
             log.error("Async sync failed for connection {}: {}", connectionId, e.getMessage());
         }
     }
-
-
 
     private Project findProjectWithAccess(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
@@ -450,7 +415,6 @@ public class GitHubIntegrationService {
             }
         }
     }
-
 
     private ConnectionResponse mapToConnectionResponse(GitHubConnection connection) {
         return ConnectionResponse.builder()

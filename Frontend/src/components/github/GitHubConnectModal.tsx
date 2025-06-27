@@ -188,7 +188,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   projectName,
 }) => {
   const [step, setStep] = useState<"oauth" | "search" | "connect">("oauth");
-  const [accessToken, setAccessToken] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepository | null>(
     null
@@ -204,16 +203,14 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   const gitHubOAuthMutation = useGitHubOAuth();
   const createConnectionMutation = useCreateGitHubConnection();
 
-  // Check existing connections
   const { data: existingConnections } = useProjectGitHubConnections(projectId);
 
   const {
     data: searchResults,
     isLoading: isSearching,
     error: searchError,
-  } = useSearchGitHubRepositories(accessToken, searchQuery, 1, 50);
+  } = useSearchGitHubRepositories(searchQuery, 1, 50);
 
-  // Check if project already has GitHub connections
   const hasExistingConnections =
     existingConnections && existingConnections.length > 0;
 
@@ -228,16 +225,13 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     }
   }, [isOpen, projectId, onClose]);
 
-  // Check for existing connections when modal opens
   useEffect(() => {
     if (isOpen) {
       console.log("🔍 Checking for existing GitHub connections...");
 
-      // If there are existing connections, skip OAuth and go to search
       if (hasExistingConnections) {
         console.log("✅ Found existing GitHub connections, skipping OAuth");
         setStep("search");
-        setAccessToken("existing_connection");
         setGithubUserInfo({
           login: "Connected User",
           name: "GitHub User",
@@ -245,9 +239,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
         });
       } else {
         console.log("❌ No existing connections found, starting OAuth flow");
-        // Reset to initial state only if no existing connections
         setStep("oauth");
-        setAccessToken("");
         setSearchQuery("");
         setSelectedRepo(null);
         setGithubUserInfo(null);
@@ -288,7 +280,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
             avatarUrl: `https://github.com/${github_user}.png`,
           });
 
-          setAccessToken("backend_processed");
           setStep("search");
           setOauthError(null);
           resetOAuthState();
@@ -322,13 +313,11 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
     return () => window.removeEventListener("message", handleMessage);
   }, [isOpen]);
 
-  // Only reset state when modal closes AND no existing connections
   useEffect(() => {
     if (!isOpen && !hasExistingConnections) {
       console.log("🔄 Resetting OAuth modal state (no existing connections)");
 
       setStep("oauth");
-      setAccessToken("");
       setSearchQuery("");
       setSelectedRepo(null);
       setGithubUserInfo(null);
@@ -500,14 +489,12 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
       repositoryFullName: selectedRepo.fullName,
       repositoryUrl: selectedRepo.url,
       repositoryId: selectedRepo.id,
-      accessToken: accessToken || "backend_processed",
     };
 
     createConnectionMutation.mutate(connectionData, {
       onSuccess: () => {
         onClose();
         setStep("oauth");
-        setAccessToken("");
         setSearchQuery("");
         setSelectedRepo(null);
         setGithubUserInfo(null);
@@ -527,7 +514,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
   }, [
     selectedRepo,
     projectId,
-    accessToken,
     createConnectionMutation,
     onClose,
     resetOAuthState,
@@ -540,7 +526,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
   const handleResetOAuth = useCallback(() => {
     setStep("oauth");
-    setAccessToken("");
     setSearchQuery("");
     setSelectedRepo(null);
     setGithubUserInfo(null);
@@ -571,8 +556,8 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-gray-900/60 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gray-900 rounded-lg flex items-center justify-center">
               <Github className="w-6 h-6 text-white" />
@@ -594,7 +579,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-1">
           {oauthError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-start space-x-3">
@@ -617,7 +602,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
 
           <DevGitHubReset projectId={projectId} />
 
-          {/* Show existing connections notice if applicable */}
           {hasExistingConnections && step === "search" && (
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex items-start space-x-3">
@@ -715,24 +699,6 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                 </div>
               )}
 
-              {!githubUserInfo && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-start space-x-3">
-                    <Github className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <h3 className="text-sm font-medium text-blue-800">
-                        OAuth Completed
-                      </h3>
-                      <p className="text-sm text-blue-700 mt-1">
-                        GitHub authorization was processed successfully.
-                        Repository search functionality needs to be updated to
-                        work with the new flow.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
@@ -741,25 +707,119 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={
-                    !accessToken ||
-                    accessToken === "backend_processed" ||
-                    accessToken === "existing_connection"
-                  }
                 />
               </div>
 
-              {(accessToken === "backend_processed" ||
-                accessToken === "existing_connection") && (
+              {searchError && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-start space-x-3">
+                    <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h3 className="text-sm font-medium text-red-800">
+                        Search Error
+                      </h3>
+                      <p className="text-sm text-red-700 mt-1">
+                        Failed to search repositories. Please try again.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isSearching && searchQuery.length >= 2 && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  <span className="ml-2 text-gray-600">
+                    Searching repositories...
+                  </span>
+                </div>
+              )}
+
+              {searchResults && searchResults.repositories.length > 0 && (
+                <div className="space-y-3 max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
+                  {searchResults.repositories.map((repo) => (
+                    <div
+                      key={repo.id}
+                      onClick={() => handleSelectRepository(repo)}
+                      className="p-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-2">
+                            {repo.isPrivate ? (
+                              <Lock className="w-4 h-4 text-gray-400" />
+                            ) : (
+                              <Unlock className="w-4 h-4 text-gray-400" />
+                            )}
+                            <h4 className="font-medium text-gray-900 truncate">
+                              {repo.fullName}
+                            </h4>
+                            <a
+                              href={repo.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          </div>
+
+                          {repo.description && (
+                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                              {repo.description}
+                            </p>
+                          )}
+
+                          <div className="flex items-center space-x-4 text-sm text-gray-500">
+                            {repo.language && (
+                              <span className="flex items-center">
+                                <span className="w-3 h-3 bg-blue-500 rounded-full mr-1"></span>
+                                {repo.language}
+                              </span>
+                            )}
+                            <span className="flex items-center">
+                              <Star className="w-4 h-4 mr-1" />
+                              {repo.stargazersCount}
+                            </span>
+                            <span className="flex items-center">
+                              <GitFork className="w-4 h-4 mr-1" />
+                              {repo.forksCount}
+                            </span>
+                            <span>Updated {formatDate(repo.updatedAt)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {searchQuery.length >= 2 &&
+                !isSearching &&
+                searchResults &&
+                searchResults.repositories.length === 0 && (
+                  <div className="text-center py-8">
+                    <Github className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      No repositories found
+                    </h3>
+                    <p className="text-gray-600">
+                      Try adjusting your search terms or check if you have
+                      access to the repository.
+                    </p>
+                  </div>
+                )}
+
+              {searchQuery.length < 2 && (
                 <div className="text-center py-8">
                   <Github className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Repository Search Coming Soon
+                    Search Your Repositories
                   </h3>
                   <p className="text-gray-600">
-                    Repository search functionality is being updated to work
-                    with the new OAuth flow. For now, you can manually enter
-                    repository details.
+                    Type at least 2 characters to search your GitHub
+                    repositories.
                   </p>
                 </div>
               )}
@@ -767,7 +827,7 @@ export const GitHubConnectModal: React.FC<GitHubConnectModalProps> = ({
           )}
 
           {step === "connect" && selectedRepo && (
-            <div className="space-y-6">
+            <div className="space-y-6 pb-4">
               <div className="text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Check className="w-8 h-8 text-green-600" />

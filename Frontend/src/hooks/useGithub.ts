@@ -30,39 +30,25 @@ export const useGitHubOAuthCallback = () => {
 };
 
 export const useSearchGitHubRepositories = (
-  accessToken: string,
   query: string,
   page = 1,
   perPage = 30
 ) => {
   return useQuery({
-    queryKey: [
-      "github",
-      "repositories",
-      "search",
-      accessToken,
-      query,
-      page,
-      perPage,
-    ],
-    queryFn: () =>
-      gitHubService.searchRepositories(accessToken, query, page, perPage),
+    queryKey: ["github", "repositories", "search", query, page, perPage],
+    queryFn: () => gitHubService.searchRepositories(query, page, perPage),
     select: (data) => data.data,
-    enabled: !!accessToken && !!query.trim() && query.length >= 2,
+    enabled: !!query.trim() && query.length >= 2,
     staleTime: 5 * 60 * 1000,
   });
 };
 
-export const useGitHubRepositoryInfo = (
-  accessToken: string,
-  owner: string,
-  repo: string
-) => {
+export const useGitHubRepositoryInfo = (owner: string, repo: string) => {
   return useQuery({
-    queryKey: ["github", "repository", accessToken, owner, repo],
-    queryFn: () => gitHubService.getRepositoryInfo(accessToken, owner, repo),
+    queryKey: ["github", "repository", owner, repo],
+    queryFn: () => gitHubService.getRepositoryInfo(owner, repo),
     select: (data) => data.data,
-    enabled: !!accessToken && !!owner && !!repo,
+    enabled: !!owner && !!repo,
     staleTime: 10 * 60 * 1000,
   });
 };

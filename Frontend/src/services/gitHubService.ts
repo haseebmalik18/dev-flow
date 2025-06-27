@@ -1,7 +1,6 @@
 import api from "../config/api";
 import type { ApiResponse } from "../types/auth";
 
-// GitHub Types
 export interface GitHubRepository {
   id: number;
   fullName: string;
@@ -148,7 +147,7 @@ export interface CreateConnectionRequest {
   repositoryFullName: string;
   repositoryUrl: string;
   repositoryId: number;
-  accessToken: string;
+  accessToken?: string;
   installationId?: number;
 }
 
@@ -212,7 +211,6 @@ export interface CreateTaskLinkRequest {
 }
 
 export const gitHubService = {
-  // OAuth
   initiateOAuth: async (
     projectId: number
   ): Promise<ApiResponse<{ authorizationUrl: string; message: string }>> => {
@@ -231,7 +229,6 @@ export const gitHubService = {
   },
 
   searchRepositories: async (
-    accessToken: string,
     query: string,
     page = 1,
     perPage = 30
@@ -243,23 +240,21 @@ export const gitHubService = {
     }>
   > => {
     const response = await api.get(
-      `/github/repositories/search?accessToken=${accessToken}&query=${query}&page=${page}&perPage=${perPage}`
+      `/github/repositories/search?query=${encodeURIComponent(
+        query
+      )}&page=${page}&perPage=${perPage}`
     );
     return response.data;
   },
 
   getRepositoryInfo: async (
-    accessToken: string,
     owner: string,
     repo: string
   ): Promise<ApiResponse<GitHubRepository>> => {
-    const response = await api.get(
-      `/github/repositories/${owner}/${repo}?accessToken=${accessToken}`
-    );
+    const response = await api.get(`/github/repositories/${owner}/${repo}`);
     return response.data;
   },
 
-  // Connections
   createConnection: async (
     data: CreateConnectionRequest
   ): Promise<ApiResponse<GitHubConnection>> => {
@@ -302,7 +297,6 @@ export const gitHubService = {
     return response.data;
   },
 
-  // Commits
   getProjectCommits: async (
     projectId: number,
     page = 0,
@@ -336,7 +330,6 @@ export const gitHubService = {
     return response.data;
   },
 
-  // Pull Requests
   getProjectPullRequests: async (
     projectId: number,
     page = 0,
@@ -373,7 +366,6 @@ export const gitHubService = {
     return response.data;
   },
 
-  // Statistics
   getProjectStatistics: async (
     projectId: number
   ): Promise<ApiResponse<GitHubStatistics>> => {
@@ -381,7 +373,6 @@ export const gitHubService = {
     return response.data;
   },
 
-  // Search
   search: async (request: {
     type: "commits" | "pullRequests";
     query?: string;
@@ -402,7 +393,6 @@ export const gitHubService = {
     return response.data;
   },
 
-  // Health
   getHealth: async (): Promise<
     ApiResponse<{
       status: string;
