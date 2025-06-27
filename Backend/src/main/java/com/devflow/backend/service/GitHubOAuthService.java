@@ -82,14 +82,14 @@ public class GitHubOAuthService {
                 .build()
                 .toUriString();
 
-        log.info("Generated GitHub OAuth URL for user: {} and project: {} with redirect URI: {} and scope: {}",
+        log.info("🔗 Generated GitHub OAuth URL for user: {} and project: {} with redirect URI: {} and scope: {}",
                 user.getUsername(), projectId, redirectUri, scope);
         return authUrl;
     }
 
     public GitHubAuthResponse handleOAuthCallback(GitHubAuthRequest request, String userAgent) {
         try {
-            log.info("Handling GitHub OAuth callback with code: {} and state: {}",
+            log.info("🚀 Handling GitHub OAuth callback with code: {} and state: {}",
                     request.getCode() != null ? "present" : "null", request.getState());
 
             OAuthState oauthState = validateAndConsumeStateEnhanced(request.getState(), userAgent);
@@ -97,18 +97,23 @@ public class GitHubOAuthService {
                 throw new AuthException("Invalid, expired, or already consumed OAuth state");
             }
 
+            log.info("📥 Exchanging authorization code for access token...");
             String accessToken = exchangeCodeForToken(request.getCode());
 
+            log.info("👤 Getting GitHub user information...");
             UserInfo githubUser = getGitHubUserInfo(accessToken);
 
+            log.info("🔐 Validating token permissions...");
             validateTokenPermissions(accessToken);
 
+            log.info("💾 Storing user token...");
             storeUserToken(oauthState.getUser(), accessToken, githubUser);
 
+            log.info("📁 Getting accessible repositories...");
             List<RepositoryInfo> repositories = getAccessibleRepositories(accessToken);
 
-            log.info("Successfully authenticated GitHub user: {} for DevFlow user: {} with scope: {}",
-                    githubUser.getLogin(), oauthState.getUser().getUsername(), scope);
+            log.info("✅ Successfully authenticated GitHub user: {} for DevFlow user: {} with {} repositories",
+                    githubUser.getLogin(), oauthState.getUser().getUsername(), repositories.size());
 
             return GitHubAuthResponse.builder()
                     .accessToken(accessToken)
@@ -118,15 +123,18 @@ public class GitHubOAuthService {
                     .accessibleRepositories(repositories)
                     .build();
 
+        } catch (AuthException e) {
+            log.error("❌ Authentication failed: {}", e.getMessage());
+            throw e;
         } catch (Exception e) {
-            log.error("Failed to handle GitHub OAuth callback: {}", e.getMessage(), e);
+            log.error("❌ Failed to handle GitHub OAuth callback: {}", e.getMessage(), e);
             throw new AuthException("Failed to authenticate with GitHub: " + e.getMessage());
         }
     }
 
     public RepositorySearchResult searchRepositories(String accessToken, String query, int page, int perPage) {
         try {
-            log.info("Searching GitHub repositories with query: {}, page: {}, perPage: {}", query, page, perPage);
+            log.info("🔍 Searching GitHub repositories with query: {}, page: {}, perPage: {}", query, page, perPage);
 
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -159,14 +167,14 @@ public class GitHubOAuthService {
             throw new RuntimeException("Failed to search repositories");
 
         } catch (Exception e) {
-            log.error("Failed to search GitHub repositories: {}", e.getMessage(), e);
+            log.error("❌ Failed to search GitHub repositories: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to search repositories: " + e.getMessage());
         }
     }
 
     public RepositoryInfo getRepositoryInfo(String accessToken, String owner, String repo) {
         try {
-            log.info("Getting repository info for {}/{}", owner, repo);
+            log.info("📄 Getting repository info for {}/{}", owner, repo);
 
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -184,7 +192,7 @@ public class GitHubOAuthService {
             throw new RuntimeException("Repository not found or not accessible");
 
         } catch (Exception e) {
-            log.error("Failed to get repository info for {}/{}: {}", owner, repo, e.getMessage());
+            log.error("❌ Failed to get repository info for {}/{}: {}", owner, repo, e.getMessage());
             throw new RuntimeException("Failed to get repository info: " + e.getMessage());
         }
     }
@@ -205,7 +213,7 @@ public class GitHubOAuthService {
             return false;
 
         } catch (Exception e) {
-            log.debug("Invalid GitHub access token: {}", e.getMessage());
+            log.debug("❌ Invalid GitHub access token: {}", e.getMessage());
             return false;
         }
     }
@@ -224,15 +232,17 @@ public class GitHubOAuthService {
                     HttpMethod.DELETE, entity, String.class
             );
 
-            log.info("Successfully revoked GitHub access token");
+            log.info("✅ Successfully revoked GitHub access token");
 
         } catch (Exception e) {
-            log.warn("Failed to revoke GitHub access token: {}", e.getMessage());
+            log.warn("⚠️ Failed to revoke GitHub access token: {}", e.getMessage());
         }
     }
 
     private void validateTokenPermissions(String accessToken) {
         try {
+            log.info("🔍 Starting GitHub token permission validation...");
+
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
@@ -241,29 +251,89 @@ public class GitHubOAuthService {
             );
 
             String scopes = response.getHeaders().getFirst("X-OAuth-Scopes");
-            if (scopes == null) {
-                log.warn("Could not determine GitHub token scopes");
+            String acceptedScopes = response.getHeaders().getFirst("X-Accepted-OAuth-Scopes");
+
+            log.info("=== 📋 GitHub Token Scope Analysis ===");
+            log.info("🎯 Requested scope in config: {}", scope);
+            log.info("🔑 Token scopes from GitHub: {}", scopes);
+            log.info("✅ Accepted scopes for /user endpoint: {}", acceptedScopes);
+
+            if (scopes == null || scopes.trim().isEmpty()) {
+                log.warn("⚠️ Could not determine GitHub token scopes from headers");
+                log.warn("⚠️ Response status: {}", response.getStatusCode());
+                log.warn("⚠️ All response headers: {}", response.getHeaders());
+
+                try {
+                    ResponseEntity<JsonNode> userResponse = restTemplate.exchange(
+                            "https://api.github.com/user", HttpMethod.GET, entity, JsonNode.class
+                    );
+                    if (userResponse.getStatusCode() == HttpStatus.OK) {
+                        log.info("✅ Token appears to work (can access /user endpoint), proceeding despite missing scope headers");
+                        return;
+                    }
+                } catch (Exception e) {
+                    log.error("❌ Token validation failed - cannot access GitHub API: {}", e.getMessage());
+                    throw new AuthException("GitHub token is invalid or expired. Please re-authorize.");
+                }
+
+                log.warn("⚠️ Proceeding without scope validation due to missing headers");
                 return;
             }
 
             List<String> scopeList = Arrays.asList(scopes.split(",\\s*"));
-            log.info("GitHub token has scopes: {}", scopeList);
+            log.info("📝 Parsed token scopes: {}", scopeList);
 
-            boolean hasRepoScope = scopeList.contains("repo") || scopeList.contains("public_repo");
-            boolean hasHookScope = scopeList.contains("admin:repo_hook") || scopeList.contains("write:repo_hook");
+            boolean hasRepoScope = scopeList.contains("repo");
+            boolean hasPublicRepoScope = scopeList.contains("public_repo");
+            boolean hasRepoStatusScope = scopeList.contains("repo:status");
+            boolean hasRepoDeploymentScope = scopeList.contains("repo_deployment");
 
-            if (!hasRepoScope) {
-                throw new AuthException("GitHub token missing repository access. Please re-authorize with proper permissions.");
+            boolean hasAdminRepoHookScope = scopeList.contains("admin:repo_hook");
+            boolean hasWriteRepoHookScope = scopeList.contains("write:repo_hook");
+            boolean hasReadRepoHookScope = scopeList.contains("read:repo_hook");
+
+            log.info("🔍 Detailed scope validation results:");
+            log.info("  📁 Repository access:");
+            log.info("    - Has 'repo' scope: {}", hasRepoScope);
+            log.info("    - Has 'public_repo' scope: {}", hasPublicRepoScope);
+            log.info("    - Has 'repo:status' scope: {}", hasRepoStatusScope);
+            log.info("    - Has 'repo_deployment' scope: {}", hasRepoDeploymentScope);
+            log.info("  🪝 Webhook access:");
+            log.info("    - Has 'admin:repo_hook' scope: {}", hasAdminRepoHookScope);
+            log.info("    - Has 'write:repo_hook' scope: {}", hasWriteRepoHookScope);
+            log.info("    - Has 'read:repo_hook' scope: {}", hasReadRepoHookScope);
+
+            boolean hasAnyRepoAccess = hasRepoScope || hasPublicRepoScope || hasRepoStatusScope || hasRepoDeploymentScope;
+
+            if (!hasAnyRepoAccess) {
+                String message = String.format(
+                        "GitHub token missing repository access. Token has scopes: [%s]. " +
+                                "Required: 'repo', 'public_repo', 'repo:status', or 'repo_deployment'. " +
+                                "Current OAuth scope config: '%s'. " +
+                                "Please check your GitHub App permissions and re-authorize.",
+                        scopes, scope
+                );
+                log.error("❌ {}", message);
+                throw new AuthException(message);
             }
 
-            if (!hasHookScope) {
-                log.warn("GitHub token missing webhook permissions. Webhook creation may fail.");
+            boolean hasAnyWebhookAccess = hasAdminRepoHookScope || hasWriteRepoHookScope || hasReadRepoHookScope;
+            if (!hasAnyWebhookAccess) {
+                log.warn("⚠️ GitHub token missing webhook permissions. Webhook creation may fail.");
+                log.warn("⚠️ Token scopes: [{}]", scopes);
+                log.warn("⚠️ Consider updating your GitHub App permissions to include webhook access");
+            } else {
+                log.info("✅ Token has webhook permissions: admin={}, write={}, read={}",
+                        hasAdminRepoHookScope, hasWriteRepoHookScope, hasReadRepoHookScope);
             }
+
+            log.info("✅ Token validation passed - has repository access: {}", hasAnyRepoAccess);
 
         } catch (AuthException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to validate GitHub token permissions: {}", e.getMessage());
+            log.error("❌ Failed to validate GitHub token permissions: {}", e.getMessage(), e);
+            log.warn("⚠️ Proceeding without token validation due to error");
         }
     }
 
@@ -284,7 +354,7 @@ public class GitHubOAuthService {
 
         userTokenRepository.save(userToken);
 
-        log.info("Stored GitHub token for user: {} (GitHub: {}) with scope: {}",
+        log.info("💾 Stored GitHub token for user: {} (GitHub: {}) with scope: {}",
                 user.getUsername(), githubUser.getLogin(), scope);
     }
 
@@ -293,7 +363,7 @@ public class GitHubOAuthService {
         Set<String> activeStates = userActiveStates.get(userKey);
 
         if (activeStates != null) {
-            log.info("Clearing {} existing OAuth states for user {} and project {}",
+            log.info("🧹 Clearing {} existing OAuth states for user {} and project {}",
                     activeStates.size(), userId, projectId);
 
             for (String existingState : activeStates) {
@@ -317,43 +387,43 @@ public class GitHubOAuthService {
 
         cleanupExpiredStates();
 
-        log.debug("Generated OAuth state {} (request {}) for user {} and project {}",
+        log.debug("🎫 Generated OAuth state {} (request {}) for user {} and project {}",
                 state, requestId, user.getId(), projectId);
         return state;
     }
 
     private OAuthState validateAndConsumeStateEnhanced(String state, String userAgent) {
         if (state == null || state.trim().isEmpty()) {
-            log.warn("Received null or empty state parameter");
+            log.warn("⚠️ Received null or empty state parameter");
             return null;
         }
 
         if (consumedStates.contains(state)) {
-            log.warn("State parameter already consumed globally: {}", state);
+            log.warn("⚠️ State parameter already consumed globally: {}", state);
             return null;
         }
 
         OAuthState oauthState = stateStore.get(state);
         if (oauthState == null) {
-            log.warn("Invalid state parameter (not found in store): {}", state);
+            log.warn("⚠️ Invalid state parameter (not found in store): {}", state);
             return null;
         }
 
         if (oauthState.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(15))) {
             stateStore.remove(state);
-            log.warn("Expired state parameter: {}", state);
+            log.warn("⚠️ Expired state parameter: {}", state);
             return null;
         }
 
         if (oauthState.isConsumed()) {
-            log.warn("State parameter already consumed (marked in state): {}", state);
+            log.warn("⚠️ State parameter already consumed (marked in state): {}", state);
             return null;
         }
 
         String userKey = oauthState.getUser().getId() + ":" + oauthState.getProjectId();
         Set<String> userStates = userActiveStates.get(userKey);
         if (userStates == null || !userStates.contains(state)) {
-            log.warn("State parameter not found in user tracking: {}", state);
+            log.warn("⚠️ State parameter not found in user tracking: {}", state);
             return null;
         }
 
@@ -400,17 +470,17 @@ public class GitHubOAuthService {
         }
 
         if (consumedStates.size() > 1000) {
-            log.info("Clearing consumed states set due to size ({})", consumedStates.size());
+            log.info("🧹 Clearing consumed states set due to size ({})", consumedStates.size());
             consumedStates.clear();
         }
 
         if (removedStates > 0) {
-            log.debug("Cleaned up {} expired OAuth states", removedStates);
+            log.debug("🧹 Cleaned up {} expired OAuth states", removedStates);
         }
     }
 
     public void clearStoredState(Long userId, Long projectId) {
-        log.info("Clearing OAuth state for user {} and project {} (development)", userId, projectId);
+        log.info("🧹 Clearing OAuth state for user {} and project {} (development)", userId, projectId);
 
         clearExistingStatesForUser(userId, projectId);
 
@@ -420,7 +490,7 @@ public class GitHubOAuthService {
                     state.getProjectId().equals(projectId);
         });
 
-        log.info("Cleared OAuth states for user {} and project {}", userId, projectId);
+        log.info("✅ Cleared OAuth states for user {} and project {}", userId, projectId);
     }
 
     public boolean hasActiveOAuthStates(Long userId, Long projectId) {
@@ -429,7 +499,7 @@ public class GitHubOAuthService {
         boolean hasActive = activeStates != null && !activeStates.isEmpty();
 
         if (hasActive) {
-            log.debug("User {} has {} active OAuth states for project {}", userId, activeStates.size(), projectId);
+            log.debug("📋 User {} has {} active OAuth states for project {}", userId, activeStates.size(), projectId);
         }
 
         return hasActive;
@@ -450,7 +520,7 @@ public class GitHubOAuthService {
             redirectUri = backendUrl + "/api/v1/github/oauth/callback";
         }
 
-        log.info("Using GitHub OAuth redirect URI: {}", redirectUri);
+        log.info("🔗 Using GitHub OAuth redirect URI: {}", redirectUri);
         return redirectUri;
     }
 
@@ -458,7 +528,7 @@ public class GitHubOAuthService {
         String frontendUrl = ngrokFrontendUrl;
 
         if (frontendUrl == null || frontendUrl.trim().isEmpty()) {
-            frontendUrl = "https://f9cd-2600-4808-5392-d600-c169-c8bd-9682-5e51.ngrok-free.app";
+            frontendUrl = "https://f9cd-2600-4808-5392-d600-6848-3d02-1ee9-1238.ngrok-free.app";
         }
 
         if (frontendUrl.endsWith("/")) {
@@ -470,7 +540,7 @@ public class GitHubOAuthService {
 
     private String exchangeCodeForToken(String code) {
         try {
-            log.info("Exchanging authorization code for access token");
+            log.info("🔄 Exchanging authorization code for access token");
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
@@ -507,21 +577,23 @@ public class GitHubOAuthService {
                 String accessToken = responseBody.get("access_token").asText();
                 String receivedScope = responseBody.has("scope") ? responseBody.get("scope").asText() : "unknown";
 
-                log.info("Successfully obtained access token with scope: {}", receivedScope);
+                log.info("✅ Successfully obtained access token with scope: {}", receivedScope);
+                log.info("🔍 Requested scope was: {}", scope);
+
                 return accessToken;
             }
 
             throw new RuntimeException("Failed to exchange code for token");
 
         } catch (Exception e) {
-            log.error("Failed to exchange OAuth code for token: {}", e.getMessage());
+            log.error("❌ Failed to exchange OAuth code for token: {}", e.getMessage());
             throw new RuntimeException("Failed to exchange code for token: " + e.getMessage());
         }
     }
 
     private UserInfo getGitHubUserInfo(String accessToken) {
         try {
-            log.info("Getting user info from GitHub");
+            log.info("👤 Getting user info from GitHub");
 
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -547,14 +619,14 @@ public class GitHubOAuthService {
             throw new RuntimeException("Failed to get user info");
 
         } catch (Exception e) {
-            log.error("Failed to get GitHub user info: {}", e.getMessage());
+            log.error("❌ Failed to get GitHub user info: {}", e.getMessage());
             throw new RuntimeException("Failed to get user info: " + e.getMessage());
         }
     }
 
     private List<RepositoryInfo> getAccessibleRepositories(String accessToken) {
         try {
-            log.info("Getting accessible repositories from GitHub");
+            log.info("📁 Getting accessible repositories from GitHub");
 
             HttpHeaders headers = createAuthHeaders(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -573,13 +645,15 @@ public class GitHubOAuthService {
             );
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                return parseRepositories(response.getBody());
+                List<RepositoryInfo> repos = parseRepositories(response.getBody());
+                log.info("📁 Found {} accessible repositories", repos.size());
+                return repos;
             }
 
             return new ArrayList<>();
 
         } catch (Exception e) {
-            log.error("Failed to get accessible repositories: {}", e.getMessage());
+            log.error("❌ Failed to get accessible repositories: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
@@ -632,7 +706,7 @@ public class GitHubOAuthService {
         try {
             return LocalDateTime.parse(dateTimeString.replace("Z", ""));
         } catch (Exception e) {
-            log.warn("Failed to parse GitHub datetime: {}", dateTimeString);
+            log.warn("⚠️ Failed to parse GitHub datetime: {}", dateTimeString);
             return LocalDateTime.now();
         }
     }
