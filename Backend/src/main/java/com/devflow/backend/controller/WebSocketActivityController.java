@@ -48,12 +48,8 @@ public class WebSocketActivityController {
         try {
             User user = extractUserFromPrincipal(principal);
             if (user == null) {
-                log.warn("No authenticated user found for global subscription (session: {})", sessionId);
                 return createErrorResponse("Authentication required", null);
             }
-
-            log.info("User {} subscribing to global activities (session: {})",
-                    user.getUsername(), sessionId);
 
             activeSessions.put(sessionId, new SessionInfo(user.getId(), sessionId, LocalDateTime.now()));
 
@@ -63,12 +59,9 @@ public class WebSocketActivityController {
                 sendRecentActivitiesAsync(user, "global", null, request.getLastSeen(), sessionId);
             }
 
-            log.info("User {} successfully subscribed to global activities", user.getUsername());
             return response;
 
         } catch (Exception e) {
-            log.error("Failed to subscribe to global activities (session: {}): {}",
-                    sessionId, e.getMessage(), e);
             return createErrorResponse("Failed to subscribe: " + e.getMessage(), null);
         }
     }
@@ -86,12 +79,8 @@ public class WebSocketActivityController {
         try {
             User user = extractUserFromPrincipal(principal);
             if (user == null) {
-                log.warn("No authenticated user found for project subscription (session: {})", sessionId);
                 return createErrorResponse("Authentication required", null);
             }
-
-            log.info("User {} subscribing to project {} activities (session: {})",
-                    user.getUsername(), projectId, sessionId);
 
             activeSessions.put(sessionId, new SessionInfo(user.getId(), sessionId, LocalDateTime.now()));
 
@@ -101,12 +90,9 @@ public class WebSocketActivityController {
                 sendRecentActivitiesAsync(user, "project", projectId, request.getLastSeen(), sessionId);
             }
 
-            log.info("User {} successfully subscribed to project {} activities", user.getUsername(), projectId);
             return response;
 
         } catch (Exception e) {
-            log.error("Failed to subscribe to project {} activities (session: {}): {}",
-                    projectId, sessionId, e.getMessage(), e);
             return createErrorResponse("Failed to subscribe: " + e.getMessage(), null);
         }
     }
@@ -133,8 +119,6 @@ public class WebSocketActivityController {
                 sessionInfo.lastActivity = LocalDateTime.now();
             }
 
-            log.debug("Heartbeat from user {} (session: {})", user.getUsername(), sessionId);
-
             return HeartbeatMessage.builder()
                     .timestamp(LocalDateTime.now())
                     .sessionId(sessionId)
@@ -142,7 +126,6 @@ public class WebSocketActivityController {
                     .build();
 
         } catch (Exception e) {
-            log.error("Heartbeat error (session: {}): {}", sessionId, e.getMessage());
             return HeartbeatMessage.builder()
                     .timestamp(LocalDateTime.now())
                     .build();
@@ -161,8 +144,6 @@ public class WebSocketActivityController {
                 return createErrorResponse("Authentication required", subscriptionId);
             }
 
-            log.info("User {} unsubscribing from {}", user.getUsername(), subscriptionId);
-
             realtimeActivityService.unsubscribe(subscriptionId);
 
             return SubscriptionResponse.builder()
@@ -172,7 +153,6 @@ public class WebSocketActivityController {
                     .build();
 
         } catch (Exception e) {
-            log.error("Failed to unsubscribe from {}: {}", subscriptionId, e.getMessage());
             return createErrorResponse("Failed to unsubscribe: " + e.getMessage(), subscriptionId);
         }
     }
@@ -201,7 +181,6 @@ public class WebSocketActivityController {
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectEvent event) {
         String sessionId = event.getMessage().getHeaders().get("simpSessionId").toString();
-        log.info("WebSocket connection established: {}", sessionId);
 
         ConnectionStatus status = ConnectionStatus.builder()
                 .status("connected")
@@ -215,12 +194,10 @@ public class WebSocketActivityController {
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         String sessionId = event.getSessionId();
-        log.info("WebSocket connection closed: {}", sessionId);
 
         SessionInfo sessionInfo = activeSessions.remove(sessionId);
         if (sessionInfo != null) {
             realtimeActivityService.cleanupUserSession(sessionInfo.userId, sessionId);
-            log.info("Cleaned up session for user {}: {}", sessionInfo.userId, sessionId);
         }
     }
 
@@ -266,12 +243,9 @@ public class WebSocketActivityController {
                             "/queue/activities/recent",
                             activities
                     );
-                    log.debug("Sent {} recent activities to user {} (session: {})",
-                            activities.size(), user.getUsername(), sessionId);
                 }
             } catch (Exception e) {
-                log.error("Failed to send recent activities to user {} (session: {}): {}",
-                        user.getUsername(), sessionId, e.getMessage());
+                // Failed to send recent activities silently
             }
         });
     }
@@ -359,15 +333,12 @@ public class WebSocketActivityController {
                     testActivity
             );
 
-            log.info("Sent test activity to user {}", user.getUsername());
-
             return SubscriptionResponse.builder()
                     .status("success")
                     .message("Test activity sent")
                     .build();
 
         } catch (Exception e) {
-            log.error("Failed to send test activity: {}", e.getMessage());
             return createErrorResponse("Test failed: " + e.getMessage(), null);
         }
     }

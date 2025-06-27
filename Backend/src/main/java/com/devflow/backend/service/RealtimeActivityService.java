@@ -170,8 +170,6 @@ public class RealtimeActivityService {
     public SubscriptionResponse subscribeToGlobalActivities(User user, String sessionId) {
         String subscriptionId = generateSubscriptionId("global", null, user.getId());
 
-        log.info("User {} subscribing to global activities (session: {})", user.getUsername(), sessionId);
-
         ActivitySubscription subscription = ActivitySubscription.builder()
                 .subscriptionId(subscriptionId)
                 .userId(user.getId())
@@ -185,8 +183,6 @@ public class RealtimeActivityService {
         userSubscriptions.computeIfAbsent(user.getId(), k -> ConcurrentHashMap.newKeySet()).add(subscriptionId);
 
         ActivitySummary summary = getGlobalActivitySummary(user);
-
-        log.info("User {} successfully subscribed to global activities", user.getUsername());
 
         return SubscriptionResponse.builder()
                 .status("success")
@@ -207,8 +203,6 @@ public class RealtimeActivityService {
 
         String subscriptionId = generateSubscriptionId("project", projectId, user.getId());
 
-        log.info("User {} subscribing to project {} activities", user.getUsername(), projectId);
-
         ActivitySubscription subscription = ActivitySubscription.builder()
                 .subscriptionId(subscriptionId)
                 .userId(user.getId())
@@ -224,8 +218,6 @@ public class RealtimeActivityService {
 
         ActivitySummary summary = getProjectActivitySummary(user, projectId);
 
-        log.info("User {} successfully subscribed to project {} activities", user.getUsername(), projectId);
-
         return SubscriptionResponse.builder()
                 .status("success")
                 .message("Subscribed to project activities")
@@ -238,8 +230,6 @@ public class RealtimeActivityService {
         ActivitySubscription subscription = activeSubscriptions.remove(subscriptionId);
 
         if (subscription != null) {
-            log.info("Unsubscribing: {}", subscriptionId);
-
             Set<String> userSubs = userSubscriptions.get(subscription.getUserId());
             if (userSubs != null) {
                 userSubs.remove(subscriptionId);
@@ -265,16 +255,12 @@ public class RealtimeActivityService {
                     }
                 }
             }
-
-            log.info("Successfully unsubscribed: {}", subscriptionId);
         } else {
             log.warn("Subscription not found: {}", subscriptionId);
         }
     }
 
     public void cleanupUserSession(Long userId, String sessionId) {
-        log.info("Cleaning up session for user {} (session: {})", userId, sessionId);
-
         Set<String> userSubs = userSubscriptions.get(userId);
         if (userSubs != null) {
             List<String> toRemove = userSubs.stream()
@@ -285,8 +271,6 @@ public class RealtimeActivityService {
                     .collect(Collectors.toList());
 
             toRemove.forEach(this::unsubscribe);
-
-            log.info("Cleaned up {} subscriptions for user {} session {}", toRemove.size(), userId, sessionId);
         }
     }
 
@@ -585,8 +569,6 @@ public class RealtimeActivityService {
 
     public void sendHeartbeatToActiveConnections() {
         try {
-            log.debug("Sending heartbeat to active connections...");
-
             HeartbeatMessage heartbeat = HeartbeatMessage.builder()
                     .type("heartbeat")
                     .timestamp(LocalDateTime.now())
@@ -610,9 +592,6 @@ public class RealtimeActivityService {
                             log.warn("Failed to send heartbeat to user {}: {}", userId, e.getMessage());
                         }
                     });
-
-            log.debug("Heartbeat sent to {} active users",
-                    activeSubscriptions.values().stream().map(ActivitySubscription::getUserId).distinct().count());
         } catch (Exception e) {
             log.error("Failed to send heartbeat: {}", e.getMessage(), e);
         }
@@ -620,8 +599,6 @@ public class RealtimeActivityService {
 
     public void cleanupInactiveSessions() {
         try {
-            log.debug("Cleaning up inactive sessions...");
-
             LocalDateTime cutoff = LocalDateTime.now().minusHours(2);
             List<String> inactiveSessions = activeSubscriptions.entrySet().stream()
                     .filter(entry -> entry.getValue().getSubscribedAt().isBefore(cutoff))
@@ -630,7 +607,6 @@ public class RealtimeActivityService {
                     .collect(Collectors.toList());
 
             if (!inactiveSessions.isEmpty()) {
-                log.info("Cleaning up {} inactive sessions", inactiveSessions.size());
                 inactiveSessions.forEach(sessionId -> {
                     try {
                         List<String> sessionSubscriptions = activeSubscriptions.entrySet().stream()
@@ -644,8 +620,6 @@ public class RealtimeActivityService {
                     }
                 });
             }
-
-            log.debug("Inactive session cleanup completed");
         } catch (Exception e) {
             log.error("Failed to cleanup inactive sessions: {}", e.getMessage(), e);
         }

@@ -457,26 +457,77 @@ public class GitHubWebhookService {
         try {
             JsonNode payloadNode = objectMapper.valueToTree(payload);
 
+            log.info("=== WEBHOOK PAYLOAD ANALYSIS ===");
+            log.info("Payload type: {}", payload.getClass().getSimpleName());
+
             JsonNode repository = null;
+            String repositoryFullName = null;
 
             if (payloadNode.has("repository")) {
                 repository = payloadNode.get("repository");
+                log.info("Found repository in root payload");
             } else if (payloadNode.has("pull_request") && payloadNode.get("pull_request").has("base")) {
                 repository = payloadNode.get("pull_request").get("base").get("repo");
+                log.info("Found repository in pull_request.base.repo");
             }
 
-            if (repository != null && repository.has("full_name")) {
-                String repositoryFullName = repository.get("full_name").asText();
-                log.debug("Looking for connection with repository: {}", repositoryFullName);
+            if (repository != null) {
+                if (repository.has("full_name")) {
+                    repositoryFullName = repository.get("full_name").asText();
+                    log.info("Extracted repository full name: {}", repositoryFullName);
+                } else {
+                    log.warn("Repository node exists but has no 'full_name' field");
+                }
+            } else {
+                log.warn("No repository found in payload");
+            }
 
-                return connectionRepository.findAll().stream()
-                        .filter(conn -> conn.getRepositoryFullName().equals(repositoryFullName))
-                        .filter(conn -> conn.getStatus() == GitHubConnectionStatus.ACTIVE)
+            if (repositoryFullName != null) {
+                final String finalRepositoryFullName = repositoryFullName;
+                log.info("Looking for connection with repository: {}", finalRepositoryFullName);
+
+                List<GitHubConnection> allConnections = connectionRepository.findAll();
+                log.info("Total connections in database: {}", allConnections.size());
+
+                for (GitHubConnection conn : allConnections) {
+                    log.info("DB Connection: ID={}, Repo={}, Status={}",
+                            conn.getId(), conn.getRepositoryFullName(), conn.getStatus());
+                }
+
+                Optional<GitHubConnection> matchingConnection = allConnections.stream()
+                        .filter(conn -> {
+                            boolean nameMatches = conn.getRepositoryFullName().equals(finalRepositoryFullName);
+                            boolean isActive = conn.getStatus() == GitHubConnectionStatus.ACTIVE;
+                            log.info("Connection {} - Name match: {}, Active: {}",
+                                    conn.getId(), nameMatches, isActive);
+                            return nameMatches && isActive;
+                        })
                         .findFirst();
+
+                if (matchingConnection.isPresent()) {
+                    log.info("✅ Found matching connection: ID={}, Repo={}",
+                            matchingConnection.get().getId(),
+                            matchingConnection.get().getRepositoryFullName());
+                    return matchingConnection;
+                } else {
+                    log.warn("❌ No matching active connection found for repository: {}", finalRepositoryFullName);
+
+                    boolean existsButInactive = allConnections.stream()
+                            .anyMatch(conn -> conn.getRepositoryFullName().equals(finalRepositoryFullName)
+                                    && conn.getStatus() != GitHubConnectionStatus.ACTIVE);
+
+                    if (existsButInactive) {
+                        log.warn("Connection exists but is not ACTIVE for repository: {}", finalRepositoryFullName);
+                    } else {
+                        log.warn("No connection found at all for repository: {}", finalRepositoryFullName);
+                    }
+                }
             }
+
+            log.info("=== END WEBHOOK PAYLOAD ANALYSIS ===");
 
         } catch (Exception e) {
-            log.error("Failed to find connection from payload: {}", e.getMessage());
+            log.error("Failed to find connection from payload: {}", e.getMessage(), e);
         }
 
         return Optional.empty();
@@ -485,10 +536,17 @@ public class GitHubWebhookService {
     private boolean verifyWebhookSignature(String rawPayload, String signature, String secret) {
         if (signature == null || secret == null) {
             log.warn("Missing signature or secret for webhook verification");
+            log.warn("Signature: {}", signature != null ? "present" : "null");
+            log.warn("Secret: {}", secret != null ? "present (length: " + secret.length() + ")" : "null");
             return false;
         }
 
         try {
+            log.info("Verifying webhook signature...");
+            log.info("Received signature: {}", signature);
+            log.info("Secret length: {}", secret.length());
+            log.info("Payload length: {}", rawPayload.length());
+
             byte[] payloadBytes = rawPayload.getBytes(StandardCharsets.UTF_8);
             byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
 
@@ -499,13 +557,16 @@ public class GitHubWebhookService {
             byte[] hash = mac.doFinal(payloadBytes);
             String expectedSignature = "sha256=" + HexFormat.of().formatHex(hash).toLowerCase();
 
+            log.info("Expected signature: {}", expectedSignature);
+
             boolean matches = constantTimeEquals(signature, expectedSignature);
 
             if (matches) {
-                log.debug("Webhook signature verified successfully");
+                log.info("✅ Webhook signature verified successfully");
             } else {
-                log.warn("Webhook signature verification failed - received: {}, expected: {}",
-                        signature, expectedSignature);
+                log.warn("❌ Webhook signature verification failed");
+                log.warn("Received: {}", signature);
+                log.warn("Expected: {}", expectedSignature);
             }
 
             return matches;

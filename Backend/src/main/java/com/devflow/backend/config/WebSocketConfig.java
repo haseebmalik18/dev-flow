@@ -78,9 +78,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 if (accessor != null) {
                     String sessionId = accessor.getSessionId();
 
-                    log.debug("Processing STOMP command: {} for session: {} with destination: {}",
-                            accessor.getCommand(), sessionId, accessor.getDestination());
-
                     if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                         handleAuthentication(accessor);
                     } else if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
@@ -101,7 +98,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                                     accessor.setUser(authToken);
                                     SecurityContextHolder.getContext().setAuthentication(authToken);
                                 } catch (Exception e) {
-                                    log.warn("Failed to re-authenticate session {}: {}", sessionId, e.getMessage());
                                     handleAuthentication(accessor);
                                 }
                             } else {
@@ -126,7 +122,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 String authHeader = authorization.get(0);
                 if (authHeader != null && authHeader.startsWith("Bearer ")) {
                     token = authHeader.substring(7);
-                    log.debug("Found Authorization header with Bearer token for session: {}", sessionId);
                 }
             }
 
@@ -134,34 +129,24 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 List<String> tokenHeaders = accessor.getNativeHeader("token");
                 if (tokenHeaders != null && !tokenHeaders.isEmpty()) {
                     token = tokenHeaders.get(0);
-                    log.debug("Found token header for session: {}", sessionId);
                 }
             }
 
             if (token != null && !token.trim().isEmpty()) {
                 String username = authenticateWithToken(token, accessor);
                 if (username != null) {
-
                     sessionToUsernameMap.put(sessionId, username);
-                    log.info("✅ WebSocket connection authenticated for user: {} (session: {})", username, sessionId);
-                } else {
-                    log.warn("❌ Failed to authenticate session: {}", sessionId);
                 }
-            } else {
-                log.warn("❌ No authentication token found for WebSocket connection from session: {}", sessionId);
             }
 
         } catch (Exception e) {
-            log.error("WebSocket authentication failed for session {}: {}", accessor.getSessionId(), e.getMessage(), e);
+            // Authentication failed silently
         }
     }
 
     private void handleDisconnection(StompHeaderAccessor accessor) {
         String sessionId = accessor.getSessionId();
-        String username = sessionToUsernameMap.remove(sessionId);
-        if (username != null) {
-            log.info("🔌 WebSocket session disconnected for user: {} (session: {})", username, sessionId);
-        }
+        sessionToUsernameMap.remove(sessionId);
     }
 
     private String authenticateWithToken(String token, StompHeaderAccessor accessor) {
@@ -180,17 +165,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     accessor.setUser(authToken);
 
                     return username;
-                } else {
-                    log.warn("Invalid WebSocket token for user: {} (session: {})",
-                            username, accessor.getSessionId());
                 }
-            } else {
-                log.warn("Could not extract username from WebSocket token (session: {})",
-                        accessor.getSessionId());
             }
         } catch (Exception e) {
-            log.error("WebSocket token authentication failed for session {}: {}",
-                    accessor.getSessionId(), e.getMessage());
+            // Token authentication failed silently
         }
         return null;
     }

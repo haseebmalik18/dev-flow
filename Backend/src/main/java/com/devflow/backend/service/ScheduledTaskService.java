@@ -47,8 +47,6 @@ public class ScheduledTaskService {
 
     @Scheduled(fixedRate = 3600000)
     public void cleanupStaleSubscriptions() {
-        log.debug("Cleaning up stale WebSocket subscriptions");
-
         try {
             realtimeActivityService.cleanupStaleSubscriptions();
 
@@ -105,8 +103,6 @@ public class ScheduledTaskService {
 
     @Scheduled(fixedRate = 900000)
     public void cleanupInactiveSessions() {
-        log.debug("Checking for inactive sessions");
-
         try {
             realtimeActivityService.cleanupInactiveSessions();
 
