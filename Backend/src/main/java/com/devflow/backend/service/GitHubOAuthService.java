@@ -39,7 +39,7 @@ public class GitHubOAuthService {
     @Value("${github.oauth.redirect-uri:}")
     private String configuredRedirectUri;
 
-    @Value("${github.oauth.scope:repo,user:email,admin:repo_hook}")
+    @Value("${github.oauth.scope:repo,user:email}")
     private String scope;
 
     @Value("${app.base-url:}")
@@ -206,11 +206,7 @@ public class GitHubOAuthService {
                     "https://api.github.com/user", HttpMethod.GET, entity, JsonNode.class
             );
 
-            if (response.getStatusCode() == HttpStatus.OK) {
-                validateTokenPermissions(accessToken);
-                return true;
-            }
-            return false;
+            return response.getStatusCode() == HttpStatus.OK;
 
         } catch (Exception e) {
             log.debug("❌ Invalid GitHub access token: {}", e.getMessage());
