@@ -7,16 +7,17 @@ import com.devflow.backend.service.GitHubIntegrationService;
 import com.devflow.backend.service.GitHubOAuthService;
 import com.devflow.backend.service.GitHubWebhookService;
 import com.devflow.backend.service.GitHubRepositorySearchService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -36,6 +37,7 @@ public class GitHubController {
     private final GitHubOAuthService oauthService;
     private final GitHubWebhookService webhookService;
     private final GitHubRepositorySearchService repositorySearchService;
+    private final ObjectMapper objectMapper;
 
     @PostMapping("/oauth/authorize")
     public ResponseEntity<ApiResponse<Map<String, String>>> initiateOAuth(
@@ -357,14 +359,16 @@ public class GitHubController {
 
     @PostMapping("/webhook")
     public ResponseEntity<ApiResponse<WebhookEventResponse>> handleWebhook(
-            @RequestBody Object payload,
+            HttpServletRequest request,
             @RequestHeader(value = "X-GitHub-Event", required = false) String event,
             @RequestHeader(value = "X-GitHub-Delivery", required = false) String deliveryId,
-            @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
-            HttpServletRequest request) {
+            @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature) {
 
         try {
             log.info("Received GitHub webhook: event={}, delivery={}", event, deliveryId);
+
+            String rawPayload = StreamUtils.copyToString(request.getInputStream(), StandardCharsets.UTF_8);
+            Object payload = objectMapper.readValue(rawPayload, Object.class);
 
             String action = null;
             if (payload instanceof Map) {
@@ -376,7 +380,7 @@ public class GitHubController {
             WebhookEventRequest webhookRequest = WebhookEventRequest.builder()
                     .event(event)
                     .action(action)
-                    .payload(payload)
+                    .payload(rawPayload)
                     .signature(signature)
                     .deliveryId(deliveryId)
                     .build();

@@ -24,6 +24,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +38,8 @@ public class GitHubWebhookService {
     private final GitHubTaskLinkingService taskLinkingService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+
+    private final ConcurrentHashMap<String, Object> processingLocks = new ConcurrentHashMap<>();
 
     @Value("${github.webhook.secret}")
     private String defaultWebhookSecret;
@@ -57,10 +60,7 @@ public class GitHubWebhookService {
             String webhookUrl = baseUrl + "/api/v1/github/webhook";
             String secret = generateWebhookSecret();
 
-            log.info("=== Creating GitHub Webhook ===");
-            log.info("Repository: {}", repositoryFullName);
-            log.info("Webhook URL: {}", webhookUrl);
-            log.info("Generated secret: {}", secret);
+            log.info("Creating GitHub Webhook for repository: {}", repositoryFullName);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(accessToken);
@@ -81,10 +81,7 @@ public class GitHubWebhookService {
                     .build();
 
             HttpEntity<CreateWebhookRequest> entity = new HttpEntity<>(request, headers);
-
             String url = String.format("https://api.github.com/repos/%s/hooks", repositoryFullName);
-
-            log.info("Sending webhook creation request to: {}", url);
 
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                     url, HttpMethod.POST, entity, JsonNode.class
@@ -111,71 +108,78 @@ public class GitHubWebhookService {
     public void deleteWebhook(String repositoryFullName, String webhookId) {
         try {
             log.info("Webhook {} marked for deletion for repository: {}", webhookId, repositoryFullName);
-
         } catch (Exception e) {
             log.warn("Failed to delete webhook {} for {}: {}", webhookId, repositoryFullName, e.getMessage());
         }
     }
 
     public WebhookEventResponse processWebhookEvent(WebhookEventRequest request, String signature) {
-        try {
-            log.info("=== Processing GitHub Webhook Event ===");
-            log.info("Event type: {}", request.getEvent());
-            log.info("Action: {}", request.getAction());
-            log.info("Delivery ID: {}", request.getDeliveryId());
-            log.info("Signature provided: {}", signature != null);
+        String deliveryId = request.getDeliveryId();
 
-            Optional<GitHubConnection> connectionOpt = findConnectionFromPayload(request.getPayload());
+        if (deliveryId == null) {
+            deliveryId = UUID.randomUUID().toString();
+        }
 
-            if (connectionOpt.isEmpty()) {
-                log.warn("No connection found for webhook event");
+        String lockKey = deliveryId;
+        Object lock = processingLocks.computeIfAbsent(lockKey, k -> new Object());
+
+        synchronized (lock) {
+            try {
+                log.info("Processing GitHub webhook delivery: {}", deliveryId);
+
+                Optional<GitHubConnection> connectionOpt = findConnectionFromPayload(request.getPayload());
+
+                if (connectionOpt.isEmpty()) {
+                    log.warn("No connection found for webhook event");
+                    return WebhookEventResponse.builder()
+                            .processed(false)
+                            .message("No matching connection found")
+                            .processedAt(LocalDateTime.now())
+                            .build();
+                }
+
+                GitHubConnection connection = connectionOpt.get();
+                log.info("Processing webhook for connection: {} (ID: {})",
+                        connection.getRepositoryFullName(), connection.getId());
+
+                String rawPayload = getRawPayloadString(request.getPayload());
+
+                if (!verifyWebhookSignature(rawPayload, signature, connection.getWebhookSecret())) {
+                    log.warn("Webhook signature verification failed for connection: {}", connection.getRepositoryFullName());
+                    return WebhookEventResponse.builder()
+                            .processed(false)
+                            .message("Invalid signature")
+                            .processedAt(LocalDateTime.now())
+                            .build();
+                }
+
+                log.info("Webhook signature verified successfully!");
+
+                connection.recordWebhookReceived();
+                connectionRepository.save(connection);
+
+                List<String> actions = processEventByType(request.getEvent(), request.getAction(),
+                        request.getPayload(), connection);
+
+                log.info("Webhook processing completed. Actions performed: {}", actions);
+
                 return WebhookEventResponse.builder()
-                        .processed(false)
-                        .message("No matching connection found")
+                        .processed(true)
+                        .message("Event processed successfully")
+                        .actions(actions)
                         .processedAt(LocalDateTime.now())
                         .build();
-            }
 
-            GitHubConnection connection = connectionOpt.get();
-            log.info("Processing webhook for connection: {} (ID: {})",
-                    connection.getRepositoryFullName(), connection.getId());
-
-            // Get the raw payload as string for signature verification
-            String rawPayload = getRawPayloadString(request.getPayload());
-
-            if (!verifyWebhookSignature(rawPayload, signature, connection.getWebhookSecret())) {
-                log.warn("Webhook signature verification failed for connection: {}", connection.getRepositoryFullName());
+            } catch (Exception e) {
+                log.error("Failed to process webhook event: {}", e.getMessage(), e);
                 return WebhookEventResponse.builder()
                         .processed(false)
-                        .message("Invalid signature")
+                        .message("Processing failed: " + e.getMessage())
                         .processedAt(LocalDateTime.now())
                         .build();
+            } finally {
+                processingLocks.remove(lockKey);
             }
-
-            log.info("Webhook signature verified successfully!");
-
-            connection.recordWebhookReceived();
-            connectionRepository.save(connection);
-
-            List<String> actions = processEventByType(request.getEvent(), request.getAction(),
-                    request.getPayload(), connection);
-
-            log.info("Webhook processing completed. Actions performed: {}", actions);
-
-            return WebhookEventResponse.builder()
-                    .processed(true)
-                    .message("Event processed successfully")
-                    .actions(actions)
-                    .processedAt(LocalDateTime.now())
-                    .build();
-
-        } catch (Exception e) {
-            log.error("Failed to process webhook event: {}", e.getMessage(), e);
-            return WebhookEventResponse.builder()
-                    .processed(false)
-                    .message("Processing failed: " + e.getMessage())
-                    .processedAt(LocalDateTime.now())
-                    .build();
         }
     }
 
@@ -463,23 +467,12 @@ public class GitHubWebhookService {
 
             if (repository != null && repository.has("full_name")) {
                 String repositoryFullName = repository.get("full_name").asText();
-                log.info("Looking for connection with repository: {}", repositoryFullName);
+                log.debug("Looking for connection with repository: {}", repositoryFullName);
 
-                Optional<GitHubConnection> connection = connectionRepository.findAll().stream()
+                return connectionRepository.findAll().stream()
                         .filter(conn -> conn.getRepositoryFullName().equals(repositoryFullName))
                         .filter(conn -> conn.getStatus() == GitHubConnectionStatus.ACTIVE)
                         .findFirst();
-
-                if (connection.isPresent()) {
-                    log.info("Found connection ID: {}", connection.get().getId());
-                    log.info("Connection webhook secret exists: {}", connection.get().getWebhookSecret() != null);
-                    log.info("Connection webhook secret length: {}",
-                            connection.get().getWebhookSecret() != null ? connection.get().getWebhookSecret().length() : "null");
-                } else {
-                    log.warn("No active connection found for repository: {}", repositoryFullName);
-                }
-
-                return connection;
             }
 
         } catch (Exception e) {
@@ -490,84 +483,40 @@ public class GitHubWebhookService {
     }
 
     private boolean verifyWebhookSignature(String rawPayload, String signature, String secret) {
-        log.info("=== Webhook Signature Verification Debug ===");
-        log.info("Received signature: {}", signature);
-        log.info("Stored secret exists: {}", secret != null);
-        log.info("Stored secret length: {}", secret != null ? secret.length() : "null");
-
-        if (signature == null) {
-            log.warn("No signature provided by GitHub");
-            return false;
-        }
-
-        if (secret == null) {
-            log.warn("No secret stored in connection");
+        if (signature == null || secret == null) {
+            log.warn("Missing signature or secret for webhook verification");
             return false;
         }
 
         try {
-            log.info("Raw payload length: {}", rawPayload.length());
-            log.info("Raw payload preview: {}", rawPayload.length() > 100 ?
-                    rawPayload.substring(0, 100) + "..." : rawPayload);
+            byte[] payloadBytes = rawPayload.getBytes(StandardCharsets.UTF_8);
+            byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
 
-            String calculatedHash = calculateHmacSha256(rawPayload, secret);
-            String expectedSignature = "sha256=" + calculatedHash;
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secretKeySpec = new SecretKeySpec(secretBytes, "HmacSHA256");
+            mac.init(secretKeySpec);
 
-            log.info("Calculated HMAC hash: {}", calculatedHash);
-            log.info("Expected full signature: {}", expectedSignature);
-            log.info("Received signature:     {}", signature);
+            byte[] hash = mac.doFinal(payloadBytes);
+            String expectedSignature = "sha256=" + HexFormat.of().formatHex(hash).toLowerCase();
 
-            // Use secure comparison to prevent timing attacks
-            boolean matches = secureEquals(signature, expectedSignature);
-            log.info("Signatures match: {}", matches);
+            boolean matches = constantTimeEquals(signature, expectedSignature);
 
-            if (!matches) {
-                log.warn("Signature verification failed!");
-                log.warn("This could be due to:");
-                log.warn("1. Wrong secret stored in database");
-                log.warn("2. GitHub using different secret than stored");
-                log.warn("3. Payload modification during transport");
-                log.warn("4. Encoding or formatting differences");
-
-                // Debug: Try with different approaches
-                String altHash1 = calculateHmacSha256(rawPayload.trim(), secret);
-                String altSig1 = "sha256=" + altHash1;
-                log.info("Alternative calculation (trimmed): {}", altSig1);
-
-                // Try with UTF-8 explicit encoding
-                String altHash2 = calculateHmacSha256UTF8(rawPayload, secret);
-                String altSig2 = "sha256=" + altHash2;
-                log.info("Alternative calculation (UTF-8): {}", altSig2);
-
+            if (matches) {
+                log.debug("Webhook signature verified successfully");
             } else {
-                log.info("✅ Signature verification successful!");
+                log.warn("Webhook signature verification failed - received: {}, expected: {}",
+                        signature, expectedSignature);
             }
 
             return matches;
 
-        } catch (Exception e) {
-            log.error("Failed to verify webhook signature: {}", e.getMessage(), e);
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            log.error("Failed to verify webhook signature: {}", e.getMessage());
             return false;
         }
     }
 
-    private String calculateHmacSha256(String data, String secret) throws NoSuchAlgorithmException, InvalidKeyException {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        mac.init(secretKeySpec);
-        byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-        return HexFormat.of().formatHex(hash);
-    }
-
-    private String calculateHmacSha256UTF8(String data, String secret) throws NoSuchAlgorithmException, InvalidKeyException {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        mac.init(secretKeySpec);
-        byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-        return HexFormat.of().formatHex(hash).toLowerCase();
-    }
-
-    private boolean secureEquals(String a, String b) {
+    private boolean constantTimeEquals(String a, String b) {
         if (a == null || b == null) {
             return a == b;
         }
