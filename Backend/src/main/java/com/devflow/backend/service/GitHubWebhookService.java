@@ -1,4 +1,3 @@
-
 package com.devflow.backend.service;
 
 import com.devflow.backend.dto.github.GitHubDTOs.*;
@@ -45,7 +44,6 @@ public class GitHubWebhookService {
     @Value("${app.base-url}")
     private String baseUrl;
 
-
     public String createWebhook(String repositoryFullName, String accessToken) {
         try {
             String webhookUrl = baseUrl + "/api/v1/github/webhook";
@@ -57,9 +55,9 @@ public class GitHubWebhookService {
 
             WebhookConfig config = WebhookConfig.builder()
                     .url(webhookUrl)
-                    .contentType("json")
+                    .content_type("json")
                     .secret(secret)
-                    .insecureSsl("0")
+                    .insecure_ssl("0")
                     .build();
 
             CreateWebhookRequest request = CreateWebhookRequest.builder()
@@ -90,11 +88,10 @@ public class GitHubWebhookService {
         }
     }
 
-
     public void deleteWebhook(String repositoryFullName, String webhookId) {
         try {
             // Note: This would require stored access token or GitHub App authentication
-            // For now,  mark as inactive and let GitHub handle cleanup
+            // For now, mark as inactive and let GitHub handle cleanup
             log.info("Webhook {} marked for deletion for repository: {}", webhookId, repositoryFullName);
 
         } catch (Exception e) {
@@ -102,11 +99,9 @@ public class GitHubWebhookService {
         }
     }
 
-
     public WebhookEventResponse processWebhookEvent(WebhookEventRequest request, String signature) {
         try {
             log.info("Processing GitHub webhook event: {} - {}", request.getEvent(), request.getAction());
-
 
             Optional<GitHubConnection> connectionOpt = findConnectionFromPayload(request.getPayload());
 
@@ -121,7 +116,6 @@ public class GitHubWebhookService {
 
             GitHubConnection connection = connectionOpt.get();
 
-
             if (!verifyWebhookSignature(request.getPayload(), signature, connection.getWebhookSecret())) {
                 log.warn("Invalid webhook signature for connection: {}", connection.getRepositoryFullName());
                 return WebhookEventResponse.builder()
@@ -131,10 +125,8 @@ public class GitHubWebhookService {
                         .build();
             }
 
-
             connection.recordWebhookReceived();
             connectionRepository.save(connection);
-
 
             List<String> actions = processEventByType(request.getEvent(), request.getAction(),
                     request.getPayload(), connection);
@@ -156,13 +148,10 @@ public class GitHubWebhookService {
         }
     }
 
-
     @Async
     public void processWebhookEventAsync(WebhookEventRequest request, String signature) {
         processWebhookEvent(request, signature);
     }
-
-
 
     private List<String> processEventByType(String eventType, String action, Object payload,
                                             GitHubConnection connection) {
@@ -207,7 +196,6 @@ public class GitHubWebhookService {
                     if (commit != null) {
                         actions.add("Processed commit: " + commit.getShortSha());
 
-
                         taskLinkingService.linkCommitToTasks(commit);
                     }
                 }
@@ -230,9 +218,7 @@ public class GitHubWebhookService {
             if (pullRequest != null) {
                 actions.add("Processed PR #" + pullRequest.getPrNumber() + " - " + action);
 
-
                 taskLinkingService.linkPullRequestToTasks(pullRequest);
-
 
                 if ("closed".equals(action) || "opened".equals(action) || "merged".equals(action)) {
                     taskLinkingService.updateTaskStatusFromPR(pullRequest);
@@ -253,13 +239,11 @@ public class GitHubWebhookService {
             JsonNode prNode = payload.get("pull_request");
             Integer prNumber = prNode.get("number").asInt();
 
-
             Optional<GitHubPullRequest> prOpt = pullRequestRepository
                     .findByGitHubConnectionAndPrNumber(connection, prNumber);
 
             if (prOpt.isPresent()) {
                 GitHubPullRequest pr = prOpt.get();
-
 
                 if (prNode.has("review_comments")) {
                     pr.setReviewCommentsCount(prNode.get("review_comments").asInt());
@@ -279,7 +263,6 @@ public class GitHubWebhookService {
     private GitHubCommit processCommitFromWebhook(JsonNode commitNode, String branch, GitHubConnection connection) {
         try {
             String sha = commitNode.get("id").asText();
-
 
             if (commitRepository.existsByCommitSha(sha)) {
                 return commitRepository.findByCommitSha(sha).orElse(null);
@@ -302,7 +285,6 @@ public class GitHubWebhookService {
                     .branchName(branch)
                     .build();
 
-
             if (commitNode.has("added") && commitNode.has("removed") && commitNode.has("modified")) {
                 commit.setAdditions(commitNode.get("added").size());
                 commit.setDeletions(commitNode.get("removed").size());
@@ -323,7 +305,6 @@ public class GitHubWebhookService {
         try {
             Integer prNumber = prNode.get("number").asInt();
 
-
             Optional<GitHubPullRequest> existingPR = pullRequestRepository
                     .findByGitHubConnectionAndPrNumber(connection, prNumber);
 
@@ -331,10 +312,8 @@ public class GitHubWebhookService {
 
             if (existingPR.isPresent()) {
                 pullRequest = existingPR.get();
-
                 updatePullRequestFromNode(pullRequest, prNode, action);
             } else {
-
                 pullRequest = createPullRequestFromNode(prNode, connection);
             }
 
@@ -396,7 +375,6 @@ public class GitHubWebhookService {
             }
         }
 
-
         if (prNode.has("additions")) {
             pullRequest.setAdditions(prNode.get("additions").asInt());
         }
@@ -420,7 +398,6 @@ public class GitHubWebhookService {
     private Optional<GitHubConnection> findConnectionFromPayload(Object payload) {
         try {
             JsonNode payloadNode = objectMapper.valueToTree(payload);
-
 
             JsonNode repository = null;
 
@@ -503,7 +480,6 @@ public class GitHubWebhookService {
 
     private LocalDateTime parseGitHubDateTime(String dateTimeString) {
         try {
-
             return LocalDateTime.parse(dateTimeString.replace("Z", ""));
         } catch (Exception e) {
             log.warn("Failed to parse GitHub datetime: {}", dateTimeString);
@@ -514,8 +490,6 @@ public class GitHubWebhookService {
     private String generateWebhookSecret() {
         return UUID.randomUUID().toString().replace("-", "");
     }
-
-
 
     @lombok.Data
     @lombok.Builder
@@ -534,8 +508,8 @@ public class GitHubWebhookService {
     @lombok.AllArgsConstructor
     private static class WebhookConfig {
         private String url;
-        private String contentType;
+        private String content_type;
         private String secret;
-        private String insecureSsl;
+        private String insecure_ssl;
     }
 }
