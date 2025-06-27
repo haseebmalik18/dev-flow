@@ -1,4 +1,3 @@
-
 package com.devflow.backend.service;
 
 import com.devflow.backend.dto.github.GitHubDTOs.*;
@@ -33,16 +32,18 @@ public class GitHubTaskLinkingService {
     private final TaskRepository taskRepository;
     private final ActivityService activityService;
 
-
     private static final List<TaskReferencePattern> TASK_PATTERNS = List.of(
             new TaskReferencePattern(Pattern.compile("#(\\d+)"), GitHubLinkType.REFERENCE, 1),
             new TaskReferencePattern(Pattern.compile("(?i)(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.REFERENCE, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)closes?\\s+#(\\d+)"), GitHubLinkType.CLOSES, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)fixes?\\s+#(\\d+)"), GitHubLinkType.FIXES, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)resolves?\\s+#(\\d+)"), GitHubLinkType.RESOLVES, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)closes?\\s+(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.CLOSES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)fixes?\\s+(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.FIXES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)resolves?\\s+(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.RESOLVES, 2)
+            new TaskReferencePattern(Pattern.compile("(?i)closes?\\s*:?\\s*#(\\d+)"), GitHubLinkType.CLOSES, 1),
+            new TaskReferencePattern(Pattern.compile("(?i)fixes?\\s*:?\\s*#(\\d+)"), GitHubLinkType.FIXES, 1),
+            new TaskReferencePattern(Pattern.compile("(?i)resolves?\\s*:?\\s*#(\\d+)"), GitHubLinkType.RESOLVES, 1),
+            new TaskReferencePattern(Pattern.compile("(?i)closes?\\s*:?\\s*(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.CLOSES, 2),
+            new TaskReferencePattern(Pattern.compile("(?i)fixes?\\s*:?\\s*(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.FIXES, 2),
+            new TaskReferencePattern(Pattern.compile("(?i)resolves?\\s*:?\\s*(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.RESOLVES, 2),
+            new TaskReferencePattern(Pattern.compile("(?i)\\b(fix|fixed|fixing)\\s*:?\\s*#(\\d+)"), GitHubLinkType.FIXES, 2),
+            new TaskReferencePattern(Pattern.compile("(?i)\\b(close|closed|closing)\\s*:?\\s*#(\\d+)"), GitHubLinkType.CLOSES, 2),
+            new TaskReferencePattern(Pattern.compile("(?i)\\b(resolve|resolved|resolving)\\s*:?\\s*#(\\d+)"), GitHubLinkType.RESOLVES, 2)
     );
 
     @lombok.AllArgsConstructor
@@ -59,17 +60,23 @@ public class GitHubTaskLinkingService {
         String referenceText;
     }
 
-
     public void linkCommitToTasks(GitHubCommit commit) {
         try {
+            log.info("=== LINKING COMMIT TO TASKS ===");
+            log.info("Commit: {} - {}", commit.getShortSha(), commit.getCommitMessage());
+
             List<TaskReference> references = extractTaskReferences(commit.getCommitMessage());
+            log.info("Found {} task references in commit message", references.size());
 
             for (TaskReference reference : references) {
+                log.info("Processing reference: Task {}, Type: {}, Text: '{}'",
+                        reference.taskId, reference.linkType, reference.referenceText);
+
                 Optional<Task> taskOpt = findTaskById(reference.taskId, commit.getGitHubConnection().getProject());
 
                 if (taskOpt.isPresent()) {
                     Task task = taskOpt.get();
-
+                    log.info("Found task: {} - {}", task.getId(), task.getTitle());
 
                     if (!commitTaskLinkRepository.existsByGitHubCommitAndTask(commit, task)) {
                         GitHubCommitTaskLink link = GitHubCommitTaskLink.builder()
@@ -81,15 +88,19 @@ public class GitHubTaskLinkingService {
 
                         commitTaskLinkRepository.save(link);
 
-
                         updateTaskStatusFromCommit(task, commit, reference.linkType);
-
 
                         createCommitLinkActivity(commit, task, reference.linkType);
 
                         log.info("Linked commit {} to task {} ({})",
                                 commit.getShortSha(), task.getId(), reference.linkType);
+                    } else {
+                        log.info("Link already exists between commit {} and task {}",
+                                commit.getShortSha(), task.getId());
                     }
+                } else {
+                    log.warn("Task {} not found in project {}",
+                            reference.taskId, commit.getGitHubConnection().getProject().getId());
                 }
             }
 
@@ -100,21 +111,28 @@ public class GitHubTaskLinkingService {
 
     public void linkPullRequestToTasks(GitHubPullRequest pullRequest) {
         try {
+            log.info("=== LINKING PULL REQUEST TO TASKS ===");
+            log.info("PR: #{} - {}", pullRequest.getPrNumber(), pullRequest.getTitle());
+
             List<TaskReference> references = new ArrayList<>();
 
             references.addAll(extractTaskReferences(pullRequest.getTitle()));
-
 
             if (pullRequest.getDescription() != null) {
                 references.addAll(extractTaskReferences(pullRequest.getDescription()));
             }
 
+            log.info("Found {} task references in PR title and description", references.size());
+
             for (TaskReference reference : references) {
+                log.info("Processing reference: Task {}, Type: {}, Text: '{}'",
+                        reference.taskId, reference.linkType, reference.referenceText);
+
                 Optional<Task> taskOpt = findTaskById(reference.taskId, pullRequest.getGitHubConnection().getProject());
 
                 if (taskOpt.isPresent()) {
                     Task task = taskOpt.get();
-
+                    log.info("Found task: {} - {}", task.getId(), task.getTitle());
 
                     if (!prTaskLinkRepository.existsByGitHubPullRequestAndTask(pullRequest, task)) {
                         GitHubPRTaskLink link = GitHubPRTaskLink.builder()
@@ -127,15 +145,19 @@ public class GitHubTaskLinkingService {
 
                         prTaskLinkRepository.save(link);
 
-
                         updateTaskStatusFromPR(task, pullRequest, reference.linkType);
-
 
                         createPRLinkActivity(pullRequest, task, reference.linkType);
 
                         log.info("Linked PR #{} to task {} ({})",
                                 pullRequest.getPrNumber(), task.getId(), reference.linkType);
+                    } else {
+                        log.info("Link already exists between PR #{} and task {}",
+                                pullRequest.getPrNumber(), task.getId());
                     }
+                } else {
+                    log.warn("Task {} not found in project {}",
+                            reference.taskId, pullRequest.getGitHubConnection().getProject().getId());
                 }
             }
 
@@ -159,7 +181,6 @@ public class GitHubTaskLinkingService {
         }
     }
 
-
     public SyncResults syncConnection(GitHubConnection connection) {
         LocalDateTime since = connection.getLastSyncAt() != null ?
                 connection.getLastSyncAt() : LocalDateTime.now().minusDays(30);
@@ -174,7 +195,6 @@ public class GitHubTaskLinkingService {
                 .build();
 
         try {
-
             List<GitHubCommit> commits = commitRepository.findCommitsNeedingTaskLinking(connection, since);
             for (GitHubCommit commit : commits) {
                 try {
@@ -184,7 +204,6 @@ public class GitHubTaskLinkingService {
                     results.getErrors().add("Failed to process commit " + commit.getShortSha() + ": " + e.getMessage());
                 }
             }
-
 
             List<GitHubPullRequest> pullRequests = pullRequestRepository.findPRsNeedingTaskLinking(connection, since);
             for (GitHubPullRequest pr : pullRequests) {
@@ -206,7 +225,6 @@ public class GitHubTaskLinkingService {
 
         return results;
     }
-
 
     @Transactional(readOnly = true)
     public GitHubSearchResponse search(GitHubSearchRequest request) {
@@ -233,8 +251,6 @@ public class GitHubTaskLinkingService {
         }
     }
 
-
-
     private List<TaskReference> extractTaskReferences(String text) {
         List<TaskReference> references = new ArrayList<>();
 
@@ -242,19 +258,29 @@ public class GitHubTaskLinkingService {
             return references;
         }
 
+        log.info("Extracting task references from text: '{}'", text);
+
         for (TaskReferencePattern patternInfo : TASK_PATTERNS) {
             Matcher matcher = patternInfo.pattern.matcher(text);
             while (matcher.find()) {
                 String taskId = matcher.group(patternInfo.taskIdGroup);
                 String referenceText = matcher.group(0);
 
-                references.add(new TaskReference(taskId, patternInfo.linkType, referenceText));
+                TaskReference ref = new TaskReference(taskId, patternInfo.linkType, referenceText);
+                references.add(ref);
+
+                log.info("Found reference: Pattern '{}' matched '{}' -> Task {}, Type {}",
+                        patternInfo.pattern.pattern(), referenceText, taskId, patternInfo.linkType);
             }
         }
 
-        return references.stream()
+        List<TaskReference> uniqueReferences = references.stream()
                 .distinct()
                 .collect(Collectors.toList());
+
+        log.info("Extracted {} unique task references", uniqueReferences.size());
+
+        return uniqueReferences;
     }
 
     private Optional<Task> findTaskById(String taskIdString, Project project) {
@@ -269,7 +295,14 @@ public class GitHubTaskLinkingService {
     }
 
     private void updateTaskStatusFromCommit(Task task, GitHubCommit commit, GitHubLinkType linkType) {
+        log.info("=== TASK STATUS UPDATE FROM COMMIT ===");
+        log.info("Task ID: {}, Current Status: {}", task.getId(), task.getStatus());
+        log.info("Commit SHA: {}, Branch: {}, Is Main Branch: {}",
+                commit.getCommitSha(), commit.getBranchName(), commit.isFromMainBranch());
+        log.info("Link Type: {}", linkType);
+
         if (!commit.isFromMainBranch()) {
+            log.info("Skipping status update - commit not from main branch");
             return;
         }
 
@@ -283,11 +316,17 @@ public class GitHubTaskLinkingService {
                 if (task.getStatus() != TaskStatus.DONE) {
                     newStatus = TaskStatus.DONE;
                     shouldComplete = true;
+                    log.info("Will update task status from {} to DONE", task.getStatus());
+                } else {
+                    log.info("Task already DONE, no status update needed");
                 }
                 break;
             case REFERENCE:
                 if (task.getStatus() == TaskStatus.TODO) {
                     newStatus = TaskStatus.IN_PROGRESS;
+                    log.info("Will update task status from TODO to IN_PROGRESS");
+                } else {
+                    log.info("Task not in TODO status, no status update for REFERENCE");
                 }
                 break;
         }
@@ -299,54 +338,67 @@ public class GitHubTaskLinkingService {
             if (shouldComplete) {
                 task.setCompletedDate(LocalDateTime.now());
                 task.setProgress(100);
+                log.info("Set task completion date and 100% progress");
             }
 
             taskRepository.save(task);
+            log.info("✅ Task status updated: {} -> {}", oldStatus, newStatus);
 
-            // Create activity (using commit author as user - this is a limitation)
-            // In a real implementation, might want to map GitHub users to DevFlow users
             User systemUser = task.getCreator();
             activityService.createTaskStatusChangedActivity(systemUser, task, oldStatus, newStatus);
 
             if (shouldComplete) {
                 activityService.createTaskCompletedActivity(systemUser, task);
             }
+
+            log.info("Created activity logs for status change");
+        } else {
+            log.info("No status update required");
         }
+
+        log.info("=== END TASK STATUS UPDATE ===");
     }
 
     private void updateTaskStatusFromPR(Task task, GitHubPullRequest pullRequest, GitHubLinkType linkType) {
+        log.info("=== TASK STATUS UPDATE FROM PR ===");
+        log.info("Task ID: {}, Current Status: {}", task.getId(), task.getStatus());
+        log.info("PR #{}: {}, Status: {}, Is Merged: {}",
+                pullRequest.getPrNumber(), pullRequest.getTitle(), pullRequest.getStatus(), pullRequest.isMerged());
+        log.info("Link Type: {}", linkType);
+
         TaskStatus newStatus = null;
         boolean shouldComplete = false;
-
 
         switch (pullRequest.getStatus()) {
             case OPEN:
                 if (pullRequest.isDraft()) {
                     if (task.getStatus() == TaskStatus.TODO) {
                         newStatus = TaskStatus.IN_PROGRESS;
+                        log.info("Will update task status from TODO to IN_PROGRESS (draft PR)");
                     }
                 } else {
                     if (task.getStatus() != TaskStatus.REVIEW && task.getStatus() != TaskStatus.DONE) {
                         newStatus = TaskStatus.REVIEW;
+                        log.info("Will update task status to REVIEW (open PR)");
                     }
                 }
                 break;
 
             case CLOSED:
                 if (pullRequest.isMerged()) {
-
                     if (linkType == GitHubLinkType.CLOSES ||
                             linkType == GitHubLinkType.FIXES ||
                             linkType == GitHubLinkType.RESOLVES) {
                         if (task.getStatus() != TaskStatus.DONE) {
                             newStatus = TaskStatus.DONE;
                             shouldComplete = true;
+                            log.info("Will update task status to DONE (merged PR with {} link)", linkType);
                         }
                     }
                 } else {
-
                     if (task.getStatus() == TaskStatus.REVIEW) {
                         newStatus = TaskStatus.IN_PROGRESS;
+                        log.info("Will update task status from REVIEW to IN_PROGRESS (closed but not merged PR)");
                     }
                 }
                 break;
@@ -359,10 +411,11 @@ public class GitHubTaskLinkingService {
             if (shouldComplete) {
                 task.setCompletedDate(LocalDateTime.now());
                 task.setProgress(100);
+                log.info("Set task completion date and 100% progress");
             }
 
             taskRepository.save(task);
-
+            log.info("✅ Task status updated: {} -> {}", oldStatus, newStatus);
 
             User systemUser = task.getCreator();
             activityService.createTaskStatusChangedActivity(systemUser, task, oldStatus, newStatus);
@@ -370,7 +423,13 @@ public class GitHubTaskLinkingService {
             if (shouldComplete) {
                 activityService.createTaskCompletedActivity(systemUser, task);
             }
+
+            log.info("Created activity logs for status change");
+        } else {
+            log.info("No status update required");
         }
+
+        log.info("=== END TASK STATUS UPDATE FROM PR ===");
     }
 
     private void createCommitLinkActivity(GitHubCommit commit, Task task, GitHubLinkType linkType) {
@@ -387,8 +446,6 @@ public class GitHubTaskLinkingService {
                     .project(task.getProject())
                     .task(task)
                     .build();
-
-            // Note: possibly go through ActivityService
 
         } catch (Exception e) {
             log.warn("Failed to create commit link activity: {}", e.getMessage());
@@ -410,8 +467,6 @@ public class GitHubTaskLinkingService {
                     .task(task)
                     .build();
 
-            // Note: possibly go through ActivityService
-
         } catch (Exception e) {
             log.warn("Failed to create PR link activity: {}", e.getMessage());
         }
@@ -420,7 +475,7 @@ public class GitHubTaskLinkingService {
     private GitHubSearchResponse searchCommits(GitHubSearchRequest request) {
         Project project = null;
         if (request.getProjectId() != null) {
-            // This would need to be validated in the calling service
+
         }
 
         int page = request.getPage() != null ? request.getPage() : 0;
@@ -433,7 +488,6 @@ public class GitHubTaskLinkingService {
         } else if (project != null) {
             commits = commitRepository.findByProjectOrderByCommitDateDesc(project, pageable);
         } else {
-
             commits = Page.empty(pageable);
         }
 
@@ -467,7 +521,6 @@ public class GitHubTaskLinkingService {
         } else if (project != null) {
             pullRequests = pullRequestRepository.findByProjectOrderByCreatedDateDesc(project, pageable);
         } else {
-
             pullRequests = Page.empty(pageable);
         }
 
@@ -484,8 +537,6 @@ public class GitHubTaskLinkingService {
                 .hasMore(pullRequests.hasNext())
                 .build();
     }
-
-
 
     private CommitSummary mapToCommitSummary(GitHubCommit commit) {
         return CommitSummary.builder()
