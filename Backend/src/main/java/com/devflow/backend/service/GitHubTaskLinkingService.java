@@ -13,8 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -33,17 +35,10 @@ public class GitHubTaskLinkingService {
     private final ActivityService activityService;
 
     private static final List<TaskReferencePattern> TASK_PATTERNS = List.of(
-            new TaskReferencePattern(Pattern.compile("#(\\d+)"), GitHubLinkType.REFERENCE, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.REFERENCE, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)closes?\\s*:?\\s*#(\\d+)"), GitHubLinkType.CLOSES, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)fixes?\\s*:?\\s*#(\\d+)"), GitHubLinkType.FIXES, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)resolves?\\s*:?\\s*#(\\d+)"), GitHubLinkType.RESOLVES, 1),
-            new TaskReferencePattern(Pattern.compile("(?i)closes?\\s*:?\\s*(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.CLOSES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)fixes?\\s*:?\\s*(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.FIXES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)resolves?\\s*:?\\s*(TASK|DEV|ISSUE|BUG|FEAT|FIX)[-_]?(\\d+)"), GitHubLinkType.RESOLVES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)\\b(fix|fixed|fixing)\\s*:?\\s*#(\\d+)"), GitHubLinkType.FIXES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)\\b(close|closed|closing)\\s*:?\\s*#(\\d+)"), GitHubLinkType.CLOSES, 2),
-            new TaskReferencePattern(Pattern.compile("(?i)\\b(resolve|resolved|resolving)\\s*:?\\s*#(\\d+)"), GitHubLinkType.RESOLVES, 2)
+            new TaskReferencePattern(Pattern.compile("(?i)\\b(?:close|closes|closed)\\s*:?\\s*#(\\d+)"), GitHubLinkType.CLOSES, 1),
+            new TaskReferencePattern(Pattern.compile("(?i)\\b(?:fix|fixes|fixed)\\s*:?\\s*#(\\d+)"), GitHubLinkType.FIXES, 1),
+            new TaskReferencePattern(Pattern.compile("(?i)\\b(?:resolve|resolves|resolved)\\s*:?\\s*#(\\d+)"), GitHubLinkType.RESOLVES, 1),
+            new TaskReferencePattern(Pattern.compile("#(\\d+)"), GitHubLinkType.REFERENCE, 1)
     );
 
     @lombok.AllArgsConstructor
@@ -252,35 +247,38 @@ public class GitHubTaskLinkingService {
     }
 
     private List<TaskReference> extractTaskReferences(String text) {
-        List<TaskReference> references = new ArrayList<>();
-
         if (text == null || text.trim().isEmpty()) {
-            return references;
+            return new ArrayList<>();
         }
 
         log.info("Extracting task references from text: '{}'", text);
 
-        for (TaskReferencePattern patternInfo : TASK_PATTERNS) {
-            Matcher matcher = patternInfo.pattern.matcher(text);
+        Set<TaskReference> references = new LinkedHashSet<>();
+
+        for (TaskReferencePattern pattern : TASK_PATTERNS) {
+            Matcher matcher = pattern.pattern.matcher(text);
             while (matcher.find()) {
-                String taskId = matcher.group(patternInfo.taskIdGroup);
+                String taskId = matcher.group(pattern.taskIdGroup);
                 String referenceText = matcher.group(0);
 
-                TaskReference ref = new TaskReference(taskId, patternInfo.linkType, referenceText);
-                references.add(ref);
+                TaskReference ref = new TaskReference(taskId, pattern.linkType, referenceText);
 
-                log.info("Found reference: Pattern '{}' matched '{}' -> Task {}, Type {}",
-                        patternInfo.pattern.pattern(), referenceText, taskId, patternInfo.linkType);
+                boolean alreadyExists = references.stream()
+                        .anyMatch(existing -> existing.taskId.equals(taskId));
+
+                if (!alreadyExists) {
+                    references.add(ref);
+                    log.info("Found reference: '{}' -> Task {}, Type {}",
+                            referenceText, taskId, pattern.linkType);
+                } else {
+                    log.info("Skipping duplicate reference: '{}' -> Task {}",
+                            referenceText, taskId);
+                }
             }
         }
 
-        List<TaskReference> uniqueReferences = references.stream()
-                .distinct()
-                .collect(Collectors.toList());
-
-        log.info("Extracted {} unique task references", uniqueReferences.size());
-
-        return uniqueReferences;
+        log.info("Extracted {} unique task references", references.size());
+        return new ArrayList<>(references);
     }
 
     private Optional<Task> findTaskById(String taskIdString, Project project) {
