@@ -39,7 +39,7 @@ public class GitHubOAuthService {
     @Value("${github.oauth.redirect-uri:}")
     private String configuredRedirectUri;
 
-    @Value("${github.oauth.scope:repo,user:email}")
+    @Value("${github.oauth.scope:repo,user:email,admin:repo_hook}")
     private String scope;
 
     @Value("${app.base-url:}")
@@ -82,8 +82,8 @@ public class GitHubOAuthService {
                 .build()
                 .toUriString();
 
-        log.info("Generated GitHub OAuth URL for user: {} and project: {} with redirect URI: {}",
-                user.getUsername(), projectId, redirectUri);
+        log.info("Generated GitHub OAuth URL for user: {} and project: {} with redirect URI: {} and scope: {}",
+                user.getUsername(), projectId, redirectUri, scope);
         return authUrl;
     }
 
@@ -101,12 +101,14 @@ public class GitHubOAuthService {
 
             UserInfo githubUser = getGitHubUserInfo(accessToken);
 
+            validateTokenPermissions(accessToken);
+
             storeUserToken(oauthState.getUser(), accessToken, githubUser);
 
             List<RepositoryInfo> repositories = getAccessibleRepositories(accessToken);
 
-            log.info("Successfully authenticated GitHub user: {} for DevFlow user: {}",
-                    githubUser.getLogin(), oauthState.getUser().getUsername());
+            log.info("Successfully authenticated GitHub user: {} for DevFlow user: {} with scope: {}",
+                    githubUser.getLogin(), oauthState.getUser().getUsername(), scope);
 
             return GitHubAuthResponse.builder()
                     .accessToken(accessToken)
@@ -196,7 +198,11 @@ public class GitHubOAuthService {
                     "https://api.github.com/user", HttpMethod.GET, entity, JsonNode.class
             );
 
-            return response.getStatusCode() == HttpStatus.OK;
+            if (response.getStatusCode() == HttpStatus.OK) {
+                validateTokenPermissions(accessToken);
+                return true;
+            }
+            return false;
 
         } catch (Exception e) {
             log.debug("Invalid GitHub access token: {}", e.getMessage());
@@ -225,6 +231,42 @@ public class GitHubOAuthService {
         }
     }
 
+    private void validateTokenPermissions(String accessToken) {
+        try {
+            HttpHeaders headers = createAuthHeaders(accessToken);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    "https://api.github.com/user", HttpMethod.HEAD, entity, String.class
+            );
+
+            String scopes = response.getHeaders().getFirst("X-OAuth-Scopes");
+            if (scopes == null) {
+                log.warn("Could not determine GitHub token scopes");
+                return;
+            }
+
+            List<String> scopeList = Arrays.asList(scopes.split(",\\s*"));
+            log.info("GitHub token has scopes: {}", scopeList);
+
+            boolean hasRepoScope = scopeList.contains("repo") || scopeList.contains("public_repo");
+            boolean hasHookScope = scopeList.contains("admin:repo_hook") || scopeList.contains("write:repo_hook");
+
+            if (!hasRepoScope) {
+                throw new AuthException("GitHub token missing repository access. Please re-authorize with proper permissions.");
+            }
+
+            if (!hasHookScope) {
+                log.warn("GitHub token missing webhook permissions. Webhook creation may fail.");
+            }
+
+        } catch (AuthException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Failed to validate GitHub token permissions: {}", e.getMessage());
+        }
+    }
+
     private void storeUserToken(User user, String accessToken, UserInfo githubUser) {
         userTokenRepository.deactivateAllTokensForUser(user);
 
@@ -242,7 +284,8 @@ public class GitHubOAuthService {
 
         userTokenRepository.save(userToken);
 
-        log.info("Stored GitHub token for user: {} (GitHub: {})", user.getUsername(), githubUser.getLogin());
+        log.info("Stored GitHub token for user: {} (GitHub: {}) with scope: {}",
+                user.getUsername(), githubUser.getLogin(), scope);
     }
 
     private void clearExistingStatesForUser(Long userId, Long projectId) {
@@ -462,7 +505,9 @@ public class GitHubOAuthService {
                 }
 
                 String accessToken = responseBody.get("access_token").asText();
-                log.info("Successfully obtained access token");
+                String receivedScope = responseBody.has("scope") ? responseBody.get("scope").asText() : "unknown";
+
+                log.info("Successfully obtained access token with scope: {}", receivedScope);
                 return accessToken;
             }
 
