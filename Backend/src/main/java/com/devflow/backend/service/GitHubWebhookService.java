@@ -205,7 +205,13 @@ public class GitHubWebhookService {
         List<String> actions = new java.util.ArrayList<>();
 
         try {
-            JsonNode payloadNode = objectMapper.valueToTree(payload);
+            JsonNode payloadNode;
+
+            if (payload instanceof String) {
+                payloadNode = objectMapper.readTree((String) payload);
+            } else {
+                payloadNode = objectMapper.valueToTree(payload);
+            }
 
             switch (eventType) {
                 case "push":
@@ -455,10 +461,20 @@ public class GitHubWebhookService {
 
     private Optional<GitHubConnection> findConnectionFromPayload(Object payload) {
         try {
-            JsonNode payloadNode = objectMapper.valueToTree(payload);
+            JsonNode payloadNode;
 
             log.info("=== WEBHOOK PAYLOAD ANALYSIS ===");
             log.info("Payload type: {}", payload.getClass().getSimpleName());
+
+            if (payload instanceof String) {
+                log.info("Parsing payload from JSON string");
+                payloadNode = objectMapper.readTree((String) payload);
+            } else {
+                log.info("Converting payload object to JsonNode");
+                payloadNode = objectMapper.valueToTree(payload);
+            }
+
+            log.info("Parsed payload has {} fields", payloadNode.size());
 
             JsonNode repository = null;
             String repositoryFullName = null;
@@ -477,9 +493,11 @@ public class GitHubWebhookService {
                     log.info("Extracted repository full name: {}", repositoryFullName);
                 } else {
                     log.warn("Repository node exists but has no 'full_name' field");
+                    log.warn("Repository fields: {}", repository.fieldNames());
                 }
             } else {
                 log.warn("No repository found in payload");
+                log.warn("Available payload fields: {}", payloadNode.fieldNames());
             }
 
             if (repositoryFullName != null) {
