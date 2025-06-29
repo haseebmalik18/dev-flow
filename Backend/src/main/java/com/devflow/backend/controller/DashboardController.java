@@ -15,8 +15,10 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -54,9 +56,13 @@ public class DashboardController {
                 .filter(Task::isOverdue)
                 .count();
 
-        long teamMembers = userProjects.stream()
-                .mapToLong(Project::getTeamSize)
-                .sum();
+        Set<Long> uniqueTeamMemberIds = new HashSet<>();
+        for (Project project : userProjects) {
+            uniqueTeamMemberIds.addAll(project.getMembers().stream()
+                    .map(projectMember -> projectMember.getUser().getId())
+                    .collect(Collectors.toSet()));
+        }
+        long teamMembers = uniqueTeamMemberIds.size();
 
         LocalDateTime lastMonth = LocalDateTime.now().minus(1, ChronoUnit.MONTHS);
 
@@ -215,14 +221,23 @@ public class DashboardController {
         try {
             Page<Project> currentProjects = projectRepository.findProjectsByUserMembership(user, Pageable.unpaged());
 
-            long currentTeamMembers = currentProjects.getContent().stream()
-                    .mapToLong(Project::getTeamSize)
-                    .sum();
+            Set<Long> currentUniqueTeamMemberIds = new HashSet<>();
+            for (Project project : currentProjects.getContent()) {
+                currentUniqueTeamMemberIds.addAll(project.getMembers().stream()
+                        .map(projectMember -> projectMember.getUser().getId())
+                        .collect(Collectors.toSet()));
+            }
+            long currentTeamMembers = currentUniqueTeamMemberIds.size();
 
-            long lastMonthTeamMembers = currentProjects.getContent().stream()
-                    .filter(p -> p.getCreatedAt().isBefore(lastMonth))
-                    .mapToLong(Project::getTeamSize)
-                    .sum();
+            Set<Long> lastMonthUniqueTeamMemberIds = new HashSet<>();
+            for (Project project : currentProjects.getContent()) {
+                if (project.getCreatedAt().isBefore(lastMonth)) {
+                    lastMonthUniqueTeamMemberIds.addAll(project.getMembers().stream()
+                            .map(projectMember -> projectMember.getUser().getId())
+                            .collect(Collectors.toSet()));
+                }
+            }
+            long lastMonthTeamMembers = lastMonthUniqueTeamMemberIds.size();
 
             if (lastMonthTeamMembers == 0) {
                 return currentTeamMembers > 0 ? 100.0 : 0.0;
